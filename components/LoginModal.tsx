@@ -6,6 +6,7 @@ import { Eye, EyeOff } from 'lucide-react'
 import {URL} from '../config/config'
 import { useRouter } from "next/navigation";
 import { useRut } from "react-rut-formatter";
+import { useAuth } from "@/app/AuthContext";
 interface LoginModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -17,6 +18,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
   const [password, setPassword] = useState('')
   const toggleVisibility = () => setIsVisible(!isVisible)
   const router = useRouter();
+  const { setToken } = useAuth();
 const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
@@ -26,17 +28,14 @@ const handleLogin = async (e: React.FormEvent) => {
             headers: {
                 "Content-Type": "application/json",
             },
+            credentials: "include",
             body: JSON.stringify(dato),
         });
         if (response.ok) {
             const data = await response.json();
-            // Maneja el caso de login exitoso
-            localStorage.setItem("token", data.token);
+            setToken(data.token);
             router.push("/adm");
-            
-            // Aquí puedes redirigir al usuario o realizar otras acciones
         } else {
-            // Maneja el caso de credenciales incorrectas
             alert("Credenciales incorrectas");
         }
     } catch (error) {

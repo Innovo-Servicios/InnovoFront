@@ -740,9 +740,9 @@ export default function Drawer_Worker({
                     <div key={doc._id} className="mb-4 shadow-xl rounded-lg">
                       <div className="w-full rounded-t-lg bg-[#fdedd3] justify-between flex items-center p-2">
                         <Link
-                          href={`${URL}/TRABAJADORES${
-                            doc.url.split("TRABAJADORES")[1]
-                          }`}
+                          href={`${URL}${doc.url}?access_token=${encodeURIComponent(
+                            token || ""
+                          )}`}
                           showAnchorIcon
                           isExternal
                           anchorIcon={

@@ -1,40 +1,45 @@
 "use client";
-import { useState ,useEffect} from "react";
+import { useEffect, useState } from "react";
 import { Navbar, NavbarBrand, NavbarContent, NavbarItem, Link, Button, Input, Textarea, Card, CardBody } from "@heroui/react";
 import { Activity, BarChart, MapPin, Phone } from "lucide-react";
 import LoginModal from "@/components/LoginModal";
 import { useRouter } from "next/navigation";
-import {ValidarToken} from "@/api/TokenRequest";
+import { useAuth } from "./AuthContext";
+
 export default function LandingPage() {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
-  const [prev_token, setPrevToken] = useState("");
   const router = useRouter();
+  const { token, authReady, refreshSession } = useAuth();
+
   const handleAdminClick = () => {
-    if (prev_token) {
-      ValidarToken(prev_token).then((res) => {
-        if (res) {
-          router.push("/adm");
-        } else {
-          setIsLoginModalOpen(true);
-        }
-      });
-    } else {
-      setIsLoginModalOpen(true);
+    if (!authReady) {
+      return;
     }
+
+    if (token) {
+      router.push("/adm");
+      return;
+    }
+
+    refreshSession().then((nextToken) => {
+      if (nextToken) {
+        router.push("/adm");
+      } else {
+        setIsLoginModalOpen(true);
+      }
+    });
   };
+
+  useEffect(() => {
+    if (authReady && token) {
+      router.prefetch("/adm");
+    }
+  }, [authReady, token, router]);
 
   const handleCloseModal = () => {
     setIsLoginModalOpen(false);
   };
 
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      setPrevToken(token);
-    } else {
-      console.log("No token found");
-    }
-  }, []);
   return (
     <div className="flex flex-col min-h-screen">
       <Navbar isBordered>
@@ -62,7 +67,9 @@ export default function LandingPage() {
               Contacto
             </Link>
           </NavbarItem>
-          <Button color="primary" variant='light' size="md" onPress={handleAdminClick}>Login</Button>
+          <Button color="primary" variant="light" size="md" onPress={handleAdminClick}>
+            Login
+          </Button>
         </NavbarContent>
       </Navbar>
 
@@ -74,9 +81,7 @@ export default function LandingPage() {
               <p className="text-xl mb-6">Optimiza tus operaciones con nuestros sensores de última generación en la Quinta Región de Chile.</p>
               <Button color="primary" size="lg">Solicitar Demo</Button>
             </div>
-            <div className="md:w-1/2">
-              a
-            </div>
+            <div className="md:w-1/2">a</div>
           </div>
         </section>
 
@@ -113,9 +118,7 @@ export default function LandingPage() {
           <div className="container mx-auto px-4">
             <h2 className="text-3xl font-bold text-center mb-12">Cobertura en la Quinta Región</h2>
             <div className="flex flex-col md:flex-row items-center justify-center">
-              <div className="md:w-1/2 mb-8 md:mb-0">
-                a
-              </div>
+              <div className="md:w-1/2 mb-8 md:mb-0">a</div>
               <div className="md:w-1/2 md:pl-12">
                 <ul className="space-y-4">
                   {["Valparaíso", "Viña del Mar", "Quillota", "San Antonio"].map((city) => (
@@ -138,25 +141,12 @@ export default function LandingPage() {
               <Input type="email" label="Correo electrónico" placeholder="Ingrese su correo electrónico" />
               <Input type="tel" label="Teléfono" placeholder="Ingrese su número de teléfono" />
               <Textarea label="Mensaje" placeholder="Escriba su mensaje aquí" />
-              <Button color="primary" className="w-full">Enviar Mensaje</Button>
+              <Button color="primary" size="lg" className="w-full">Enviar Mensaje</Button>
             </form>
           </div>
         </section>
       </main>
 
-      <footer className="bg-gray-800 text-white py-8">
-        <div className="container mx-auto px-4">
-          <div className="flex flex-col md:flex-row justify-between items-center">
-            <div className="mb-4 md:mb-0">
-              <h3 className="text-xl font-bold">GasFlowSensors</h3>
-              <p>Soluciones de monitoreo de flujo de gas para la Quinta Región</p>
-            </div>
-            <div>
-              <p>&copy; 2023 GasFlowSensors. Todos los derechos reservados.</p>
-            </div>
-          </div>
-        </div>
-      </footer>
       <LoginModal isOpen={isLoginModalOpen} onClose={handleCloseModal} />
     </div>
   );

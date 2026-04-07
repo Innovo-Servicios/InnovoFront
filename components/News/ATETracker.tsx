@@ -79,9 +79,9 @@ export default function ATETracker() {
   const [selectedSendDate, setSelectedSendDate] = useState(
     parseDate(new Date().toISOString().split("T")[0])
   );
-  const { socket } = useAuth();
+  const { socket, token } = useAuth();
   const fetchATEs = async () => {
-    const token = localStorage.getItem("token");
+    if (!token) return;
     const response = await fetch(`${URL}/middleware/obtenerATE_Adm`, {
       method: "POST",
       headers: {
@@ -99,7 +99,7 @@ export default function ATETracker() {
   };
   useEffect(() => {
     fetchATEs();
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     const lowercasedFilter = searchTerm.toLowerCase();
@@ -297,7 +297,7 @@ export default function ATETracker() {
     }
   };
   const changeListAte = async (value: any) => {
-    const token = localStorage.getItem("token");
+    if (!token) return;
     const fechas = {
       inicio: value.start.toString(),
       fin: value.end.toString(),

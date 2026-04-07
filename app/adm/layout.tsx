@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { Tooltip } from "@heroui/tooltip";
 import Link from "next/link";
+import { useAuth } from "../AuthContext";
 export default function AdminLayout({
   children,
 }: {
@@ -31,6 +32,7 @@ const navItems = [
 ];
 function AdminLayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { logout } = useAuth();
   const isActive = (path: string) => pathname === path;
   return (
     <div className={styles.body}>
@@ -50,8 +52,7 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
         <Tooltip content="Cerrar sesión">
           <button
             onClick={() => {
-              localStorage.removeItem("token");
-              window.location.href = "/";
+              logout();
             }}
             className={`${styles.btn}`}
           >

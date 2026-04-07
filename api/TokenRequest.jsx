@@ -20,6 +20,6 @@ export const ValidarToken = async (token) => {
     return data;
     
   } catch (error) {
-    localStorage.removeItem("token");
+    return null;
   }
 };
