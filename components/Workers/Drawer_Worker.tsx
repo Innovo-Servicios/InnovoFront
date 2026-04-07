@@ -278,17 +278,48 @@ export default function Drawer_Worker({
       console.error("Error al subir el documento:", response.statusText);
     }
   };
-  const downloadFile = async (fileUri: string, fileName: string) => {
+  function buildValidatedDownloadUrl(baseUrl: string, filePath: string): string {
     try {
-      const response = await fetch(fileUri);
-      const blob = await response.blob();
+      // Minimal path validation (Do this before new URL(baseUrl), as URL() resolves dot-segments.)
+      if (baseUrl.includes('/../') || /\/%2e%2e\//i.test(baseUrl)) {
+        throw new Error('Invalid path');
+      }
+      if (filePath.includes('/../') || /\/%2e%2e\//i.test(filePath)) {
+        throw new Error('Invalid path');
+      }
+      
+      const url = new window.URL(baseUrl);
+      
+      // Protocol + host checks (KEEP ONLY IF scheme/host may vary.)
+      if (!['http:', 'https:'].includes(url.protocol)) {
+        throw new Error('Invalid protocol');
+      }
+      
+      // Validate path parameters (KEEP ONLY IF original used path params.)
+      if (!/^[A-Za-z0-9_\-\/\.]+$/.test(filePath)) {
+        throw new Error('Invalid parameter');
+      }
+      
+      // Rebuild pathname from fixed literals + validated segments.
+      url.pathname = url.pathname.endsWith('/') ? url.pathname + filePath : url.pathname + '/' + filePath;
+      
+      return url.href;
+    } catch {
+      throw new Error('Invalid URL');
+    }
+  }
+
+  const downloadFile = (fileUri: string, fileName: string) => {
+    try {
+      const validatedUrl = buildValidatedDownloadUrl(URL, fileUri.replace(URL + '/', ''));
+
       const link = document.createElement("a");
-      link.href = window.URL.createObjectURL(blob);
+      link.href = validatedUrl;
       link.setAttribute("download", fileName); // Forzar la descarga con el nombre original
+      link.rel = "noopener noreferrer";
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      window.URL.revokeObjectURL(link.href); // Limpiar memoria
     } catch (error) {
       console.error("Error al descargar el archivo:", error);
     }

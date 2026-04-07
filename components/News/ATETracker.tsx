@@ -268,17 +268,30 @@ export default function ATETracker() {
       sendVerificacion();
     }
   };
-  const downloadFile = async (fileUri: string, fileName: string) => {
+  const downloadFile = (fileUri: string, fileName: string) => {
     try {
-      const response = await fetch(fileUri);
-      const blob = await response.blob();
+      const parsedUri = new window.URL(fileUri, window.location.origin);
+      const allowedBase = new window.URL(URL, window.location.origin);
+      const allowedPath =
+        allowedBase.pathname === "/" ? "/" : allowedBase.pathname;
+
+      if (!["http:", "https:"].includes(parsedUri.protocol)) {
+        throw new Error("Protocolo de archivo no permitido");
+      }
+      if (parsedUri.origin !== allowedBase.origin) {
+        throw new Error("Origen de archivo no permitido para evitar SSRF");
+      }
+      if (allowedPath !== "/" && !parsedUri.pathname.startsWith(allowedPath)) {
+        throw new Error("Ruta de archivo no permitida");
+      }
+
       const link = document.createElement("a");
-      link.href = window.URL.createObjectURL(blob);
+      link.href = parsedUri.toString();
       link.setAttribute("download", fileName); // Forzar la descarga con el nombre original
+      link.rel = "noopener noreferrer";
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      window.URL.revokeObjectURL(link.href); // Limpiar memoria
     } catch (error) {
       console.error("Error al descargar el archivo:", error);
     }
