@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from "react"
-import dynamic from "next/dynamic"
 import { useAuth } from "@/app/AuthContext"
 import "leaflet/dist/leaflet.css"
 import { divIcon } from "leaflet"
@@ -8,10 +7,7 @@ import { CircleUserRound } from "lucide-react"
 import CustomMarker from "../CustomMarker"
 import { Card, CardBody, Button } from "@heroui/react"
 import ConnectedWorkers from "./ConnectedWorkers"
-
-const MapContainerWithNoSSR = dynamic(() => import("react-leaflet").then((mod) => mod.MapContainer), { ssr: false })
-const TileLayerWithNoSSR = dynamic(() => import("react-leaflet").then((mod) => mod.TileLayer), { ssr: false })
-import { useMapEvents } from "react-leaflet"
+import { MapContainer, TileLayer, useMapEvents } from "react-leaflet"
 
 function MapController({
   selectedWorker,
@@ -36,17 +32,11 @@ function MapController({
 
 export default function Map() {
   const { socket } = useAuth()
-  const [isClient, setIsClient] = useState(false)
   const [workers, setWorkers] = useState<Record<string, { ubicacion: [number, number]; nombre: string }>>({})
   const [selectedWorker, setSelectedWorker] = useState<string | null>(null)
   const [isFixed, setIsFixed] = useState(true)
 
-  useEffect(() => {
-    setIsClient(typeof window !== "undefined")
-  }, [])
-
   const customIcon = useMemo(() => {
-    if (!isClient) return null
 
     return divIcon({
       html: renderToString(
@@ -88,7 +78,7 @@ export default function Map() {
       iconSize: [42, 42],
       iconAnchor: [21, 21],
     })
-  }, [isClient])
+  }, [])
 
   useEffect(() => {
     if (socket) {
@@ -126,8 +116,6 @@ export default function Map() {
     setIsFixed(true)
   }
 
-  if (!isClient) return null
-
   return (
     <div style={{ position: "relative", width: "100%", height: "100%", zIndex: 0 }}>
       <Card className="absolute top-[20%] left-4 z-10 max-w-sm">
@@ -135,8 +123,8 @@ export default function Map() {
           <ConnectedWorkers workers={workers} onSelectWorker={handleWorkerSelect} selectedWorker={selectedWorker}/>
         </CardBody>
       </Card>
-      <MapContainerWithNoSSR center={[-33.0411, -71.6341]} zoom={13} className="h-full w-full z-0">
-        <TileLayerWithNoSSR
+      <MapContainer center={[-33.0411, -71.6341]} zoom={13} className="h-full w-full z-0">
+        <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
@@ -152,7 +140,7 @@ export default function Map() {
             />
           ) : null,
         )}
-      </MapContainerWithNoSSR>
+      </MapContainer>
     </div>
   )
 }
