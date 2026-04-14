@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { Navbar, NavbarBrand, NavbarContent, NavbarItem, Link, Button, Input, Textarea, Card, CardBody } from "@heroui/react";
 import { Activity, BarChart, MapPin, Phone } from "lucide-react";
+import Image from "next/image";
 import LoginModal from "@/components/LoginModal";
 import { useRouter } from "next/navigation";
 import { useAuth } from "./AuthContext";
@@ -74,14 +75,35 @@ export default function LandingPage() {
       </Navbar>
 
       <main className="flex-grow">
-        <section id="inicio" className="bg-gradient-to-r from-blue-500 to-blue-700 text-white py-20">
+        <section id="inicio" className="bg-gradient-to-r from-blue-500 to-blue-700 text-white py-20 overflow-hidden">
           <div className="container mx-auto px-4 flex flex-col md:flex-row items-center">
-            <div className="md:w-1/2 mb-10 md:mb-0">
-              <h2 className="text-4xl font-bold mb-4">Monitoreo de Flujo de Gas en Tiempo Real</h2>
-              <p className="text-xl mb-6">Optimiza tus operaciones con nuestros sensores de última generación en la Quinta Región de Chile.</p>
-              <Button color="primary" size="lg">Solicitar Demo</Button>
+            <div className="md:w-1/2 mb-10 md:mb-0 z-10">
+              <h1 className="text-5xl font-extrabold mb-4 leading-tight">
+                Monitoreo de Flujo de Gas <br />
+                <span className="text-blue-200">en Tiempo Real</span>
+              </h1>
+              <p className="text-xl mb-8 opacity-90">
+                Optimiza tus operaciones con Innovo. Implementamos sensores inteligentes de última generación para el control total de consumo en la Quinta Región.
+              </p>
+              <div className="flex gap-4">
+                <Button color="primary" size="lg" className="bg-white text-blue-700 font-bold hover:bg-blue-50">
+                  Solicitar Demo
+                </Button>
+                <Button variant="bordered" size="lg" className="text-white border-white hover:bg-white/10">
+                  Saber más
+                </Button>
+              </div>
             </div>
-            <div className="md:w-1/2">a</div>
+            <div className="md:w-1/2 relative h-[400px] w-full">
+              <Image 
+                src="/hero.png" 
+                alt="Dashboard de monitoreo de gas inteligente Innovo" 
+                fill
+                priority
+                className="object-cover rounded-2xl shadow-2xl"
+                sizes="(max-width: 768px) 100vw, 50vw"
+              />
+            </div>
           </div>
         </section>
 
@@ -116,9 +138,13 @@ export default function LandingPage() {
 
         <section id="cobertura" className="py-20">
           <div className="container mx-auto px-4">
-            <h2 className="text-3xl font-bold text-center mb-12">Cobertura en la Quinta Región</h2>
+            <h2 className="text-3xl font-bold text-center mb-12">Cobertura en la Quinta Región de Valparaíso</h2>
             <div className="flex flex-col md:flex-row items-center justify-center">
-              <div className="md:w-1/2 mb-8 md:mb-0">a</div>
+              <div className="md:w-1/2 mb-8 md:mb-0 bg-blue-50 rounded-xl p-8 text-center border-2 border-dashed border-blue-200">
+                <MapPin className="h-16 w-16 text-blue-600 mx-auto mb-4" />
+                <p className="text-blue-800 font-medium">Mapa de Cobertura en Proceso de Implementación</p>
+                <p className="text-sm text-blue-600 mt-2">Pronto visualización interactiva de nodos activos.</p>
+              </div>
               <div className="md:w-1/2 md:pl-12">
                 <ul className="space-y-4">
                   {["Valparaíso", "Viña del Mar", "Quillota", "San Antonio"].map((city) => (
