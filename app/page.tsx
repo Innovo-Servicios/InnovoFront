@@ -49,7 +49,7 @@ export default function LandingPage() {
         className="w-full h-16 px-4 md:px-10 bg-white"
       >
         <NavbarBrand className="max-w-fit">
-          <p className="font-bold text-inherit text-lg">Innovo</p>
+          <p className="font-bold text-inherit text-2xl">INNOVO</p>
         </NavbarBrand>
 
         <NavbarContent
@@ -115,7 +115,7 @@ export default function LandingPage() {
           <div className="relative z-10 container mx-auto px-4 min-h-[400px] flex items-center">
             <div className="max-w-2xl">
               <h1 className="text-5xl font-extrabold mb-4 leading-tight">
-                INNOVO SERVICOS <br />
+                Innovo Servicios <br />
                 <span className="text-blue-200">Monitoreo de Flujo de Gas</span>
               </h1>
 
