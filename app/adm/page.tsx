@@ -71,6 +71,9 @@ export default function Admin() {
     }
   };
 
+  const headerGradient =
+    "flex flex-row items-center justify-between space-y-0 pb-2 bg-gradient-to-r from-blue-100 via-purple-100 to-blue-100";
+
   return (
     <div
       className="p-6 space-y-6 bg-gradient-to-br from-sky-50 via-blue-50 to-blue-100 overflow-x-hidden"
@@ -102,7 +105,7 @@ export default function Admin() {
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <Card className="col-span-full lg:col-span-2 overflow-hidden">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardHeader className={headerGradient}>
             <CardFooter className="text-xl font-bold">
               Estadísticas generales
             </CardFooter>
@@ -122,7 +125,7 @@ export default function Admin() {
           </CardBody>
         </Card>
         <Card className="overflow-hidden group hover:shadow-lg transition-all duration-300">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 bg-gradient-to-r from-primary/10 to-primary/5">
+          <CardHeader className={headerGradient}>
             <CardFooter className="text-md font-medium">
               Subir asignaciones
             </CardFooter>
@@ -179,7 +182,7 @@ export default function Admin() {
         </Card>
         <Link href="/adm/workers">
           <Card className="overflow-hidden group hover:shadow-lg transition-all duration-300">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 bg-gradient-to-r from-secondary/10 to-secondary/5">
+            <CardHeader className={headerGradient}>
               <CardFooter className="text-lg font-medium">
                 Ver trabajadores
               </CardFooter>
@@ -198,7 +201,7 @@ export default function Admin() {
         </Link>
         <Link href="/adm/notification">
           <Card className="overflow-hidden group hover:shadow-lg transition-all duration-300">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 bg-gradient-to-r from-accent/10 to-accent/5">
+            <CardHeader className={headerGradient}>
               <CardFooter className="text-lg font-medium">
                 Generar notificaciones
               </CardFooter>
@@ -217,7 +220,7 @@ export default function Admin() {
         </Link>
         <Link href="/adm/novedades">
           <Card className="overflow-hidden group hover:shadow-lg transition-all duration-300">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 bg-gradient-to-r from-destructive/10 to-destructive/5">
+            <CardHeader className={headerGradient}>
               <CardFooter className="text-lg font-medium">
                 Administrar novedades
               </CardFooter>
@@ -236,7 +239,7 @@ export default function Admin() {
         </Link>
         <Link href="/adm/rutas">
           <Card className="overflow-hidden group hover:shadow-lg transition-all duration-300">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 bg-gradient-to-r from-primary/10 to-secondary/10">
+            <CardHeader className={headerGradient}>
               <CardFooter className="text-lg font-medium">Ver Rutas</CardFooter>
               <Map
                 className="text-primary group-hover:text-destructive transition-colors duration-300"
@@ -253,7 +256,7 @@ export default function Admin() {
         </Link>
         <Link href="/adm/followup">
           <Card className="overflow-hidden group hover:shadow-lg transition-all duration-300">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 bg-gradient-to-r from-primary/10 to-secondary/10">
+            <CardHeader className={headerGradient}>
               <CardFooter className="text-lg font-medium">
                 Seguimiento
               </CardFooter>
@@ -272,7 +275,7 @@ export default function Admin() {
         </Link>
         <Link href="/adm/direcciones">
           <Card className="overflow-hidden group hover:shadow-lg transition-all duration-300">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 bg-gradient-to-r from-primary/10 to-secondary/10">
+            <CardHeader className={headerGradient}>
               <CardFooter className="text-lg font-medium">
                 Modificar direcciones
               </CardFooter>
@@ -290,7 +293,7 @@ export default function Admin() {
           </Card>
         </Link>{/** 
         <Card className="col-span-full overflow-hidden">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardHeader className={headerGradient}>
             <CardFooter className="text-xl font-bold">
               Progreso general
             </CardFooter>

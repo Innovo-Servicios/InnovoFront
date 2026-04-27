@@ -121,7 +121,7 @@ const NewsTab: React.FC<NewsTabProps> = ({
         classNames={{
           table: "min-h-[100px] max-h-[93.5vh]",
           wrapper: "w-full h-full overflow-auto shadow-none rounded-lg",
-          th: "text-md text-center bg-gray-500 text-white",
+          th: "bg-gradient-to-r from-blue-100 via-purple-100 to-blue-100 bg-[length:500%_100%] text-slate-800 font-bold text-sm text-center border-r-2 border-white last:border-r-0",
           td: "text-sm text-center",
         }}
         color="primary"

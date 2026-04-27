@@ -7,7 +7,7 @@
   width: 100vw;
   height: 100vh;
 
-  background-color: #ececec;
+  background: linear-gradient(to bottom right, #f0f9ff, #eff6ff, #dbeafe);
   overflow: hidden;
 }
 

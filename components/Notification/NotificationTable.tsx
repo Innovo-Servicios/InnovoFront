@@ -215,7 +215,7 @@ export default function NotificationTable({
           classNames={{
             table: "min-h-[100px] max-h-[93.5vh]",
             wrapper: "bg-[transparent] p-0",
-            th: "bg-gray-500 text-white font-bold text-sm text-center ",
+            th: "bg-gradient-to-r from-blue-100 via-purple-100 to-blue-100 bg-[length:500%_100%] text-slate-800 font-bold text-sm border-r-2 border-white last:border-r-0",
             td: "text-md px-2 text-center",
           }}
           shadow="none"
@@ -224,11 +224,11 @@ export default function NotificationTable({
           selectionMode="single"
         >
           <TableHeader>
-            <TableColumn>Tipo</TableColumn>
-            <TableColumn>Título</TableColumn>
-            <TableColumn>Mensaje</TableColumn>
-            <TableColumn>Contenido</TableColumn>
-            <TableColumn>Fecha</TableColumn>
+            <TableColumn className="text-center">TIPO</TableColumn>
+            <TableColumn className="text-center">TÍTULO</TableColumn>
+            <TableColumn className="text-center">MENSAJE</TableColumn>
+            <TableColumn className="text-center">CONTENIDO</TableColumn>
+            <TableColumn className="text-center">FECHA</TableColumn>
           </TableHeader>
           <TableBody
             items={paginatedNotifications}
