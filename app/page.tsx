@@ -365,7 +365,7 @@ export default function LandingPage() {
               Sobre Innovo Servicios
             </h2>
 
-            <p className="max-w-3xl mx-auto text-lg text-gray-700 text-center">
+            <p className="max-w-4xl mx-auto text-lg text-gray-700 text-justify leading-relaxed">
               Innovo Servicios nace con el propósito de apoyar a empresas del rubro gas en sus procesos operativos en terreno, entregando un servicio confiable, ordenado y eficiente para la lectura de medidores. Como empresa contratista, nuestro trabajo se enfoca en la responsabilidad operativa, la coordinación de equipos y el cumplimiento de cada servicio asignado. Contamos con personal capacitado para ejecutar labores en terreno, manteniendo una comunicación clara y un enfoque constante en la calidad del servicio. Nuestra misión es contribuir a que las empresas puedan optimizar sus procesos de lectura, seguimiento y control operacional, reduciendo tiempos de gestión y fortaleciendo la continuidad del servicio. Nuestra visión es consolidarnos como un aliado estratégico para empresas del sector energético, destacando por nuestra eficiencia, compromiso y capacidad de adaptación en distintas zonas del país.
             </p>
           </div>
