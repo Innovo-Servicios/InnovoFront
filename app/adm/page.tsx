@@ -70,10 +70,11 @@ export default function Admin() {
       setFile(droppedFile);
     }
   };
+
   return (
     <div
-      className="p-6 space-y-6 bg-gradient-to-br from-background to-secondary/20 overflow-x-hidden"
-      style={{ width: "97.5vw", height: "100vh" }}
+      className="p-6 space-y-6 bg-gradient-to-br from-sky-50 via-blue-50 to-blue-100 overflow-x-hidden"
+      style={{ width: "100%", minHeight: "100vh" }}
     >
       <div className="flex flex-row items-center justify-between content-center mb-8">
         <h1 className="text-4xl font-bold text-black">
