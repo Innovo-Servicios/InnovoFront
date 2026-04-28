@@ -105,7 +105,7 @@ const NewsTab: React.FC<NewsTabProps> = ({
   };
 
   return (
-    <div className="w-full">
+  <div className="flex h-full min-h-0 w-full flex-col">
       <NovedadDrawer
         novedad={selectedNovedad}
         isOpen={isOpen}
@@ -119,9 +119,9 @@ const NewsTab: React.FC<NewsTabProps> = ({
         aria-label="Tabla de novedades"
         isStriped
         classNames={{
-          table: "min-h-[100px] max-h-[93.5vh]",
-          wrapper: "w-full h-full overflow-auto shadow-none rounded-lg",
-          th: "bg-gradient-to-r from-blue-100 via-purple-100 to-blue-100 bg-[length:500%_100%] text-slate-800 font-bold text-sm text-center border-r-2 border-white last:border-r-0",
+          table: "min-h-[100px] min-w-[900px]",
+          wrapper: "w-full h-full overflow-auto shadow-none rounded-lg p-0",
+          th: "bg-gradient-to-r from-blue-100 via-purple-200 to-blue-100 text-slate-800 font-bold text-sm text-center border-r-2 border-white last:border-r-0",
           td: "text-sm text-center",
         }}
         color="primary"
