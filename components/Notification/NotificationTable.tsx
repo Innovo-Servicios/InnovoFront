@@ -19,8 +19,16 @@ import {
   Chip,
   Spinner,
 } from "@heroui/react";
-import { Search, Bell, CircleAlert, File, ListFilter } from "lucide-react";
-import { parseDate } from "@internationalized/date";
+import {
+  Search,
+  Bell,
+  CircleAlert,
+  File,
+  ListFilter,
+  CalendarDays,
+  RotateCcw,
+} from "lucide-react";
+import { parseDate, CalendarDate } from "@internationalized/date";
 import { URL } from "@/config/config";
 import { useAuth } from "@/app/AuthContext";
 import { I18nProvider } from "@react-aria/i18n";
@@ -42,20 +50,57 @@ interface NotificationTableProps {
   onRowClick: (notification: Notification) => void;
 }
 
+type DateRangeValue = {
+  start: CalendarDate;
+  end: CalendarDate;
+};
+
+type QuickDateFilter = "today" | "last7" | "month" | "custom";
+
+const toCalendarDate = (date: Date) => {
+  return parseDate(date.toISOString().split("T")[0]);
+};
+
+const getTodayRange = (): DateRangeValue => {
+  const today = new Date();
+
+  return {
+    start: toCalendarDate(today),
+    end: toCalendarDate(today),
+  };
+};
+
+const getLastSevenDaysRange = (): DateRangeValue => {
+  const today = new Date();
+  const sevenDaysAgo = new Date();
+
+  sevenDaysAgo.setDate(today.getDate() - 6);
+
+  return {
+    start: toCalendarDate(sevenDaysAgo),
+    end: toCalendarDate(today),
+  };
+};
+
+const getCurrentMonthRange = (): DateRangeValue => {
+  const today = new Date();
+  const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+  return {
+    start: toCalendarDate(firstDayOfMonth),
+    end: toCalendarDate(today),
+  };
+};
+
 export default function NotificationTable({
   onRowClick,
 }: NotificationTableProps) {
   const { token, socket } = useAuth();
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [dateRange, setDateRange] = useState({
-    start: parseDate(
-      new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-        .toISOString()
-        .split("T")[0]
-    ),
-    end: parseDate(new Date().toISOString().split("T")[0]),
-  });
+  const [dateRange, setDateRange] = useState<DateRangeValue>(getTodayRange);
+  const [quickDateFilter, setQuickDateFilter] =
+    useState<QuickDateFilter>("today");
 
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [selectedType, setSelectedType] = useState<Set<string>>(
@@ -72,6 +117,38 @@ export default function NotificationTable({
     { value: "alert", label: "Alertas" },
     { value: "document", label: "Documentos" },
   ];
+
+  useEffect(() => {
+    setDateRange(getTodayRange());
+    setQuickDateFilter("today");
+  }, []);
+
+  const applyQuickDateFilter = (filter: QuickDateFilter) => {
+    setQuickDateFilter(filter);
+
+    if (filter === "today") {
+      setDateRange(getTodayRange());
+      return;
+    }
+
+    if (filter === "last7") {
+      setDateRange(getLastSevenDaysRange());
+      return;
+    }
+
+    if (filter === "month") {
+      setDateRange(getCurrentMonthRange());
+      return;
+    }
+  };
+
+  const resetFilters = () => {
+    setSearchQuery("");
+    setSelectedType(new Set(["Todos"]));
+    setDateRange(getTodayRange());
+    setQuickDateFilter("today");
+    setCurrentPage(1);
+  };
 
   const fetchNotifications = useCallback(async () => {
     if (!token) {
@@ -93,6 +170,7 @@ export default function NotificationTable({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(datos_body),
+        cache: "no-store",
       });
 
       const data = await response.json();
@@ -194,83 +272,147 @@ export default function NotificationTable({
     setSelectedType(updatedKeys);
   }, []);
 
+  const getTypeButtonLabel = () => {
+    if (selectedType.has("Todos")) return "Tipo";
+
+    const selectedLabels = typeOptions
+      .filter((option) => selectedType.has(option.value))
+      .map((option) => option.label);
+
+    if (selectedLabels.length === 1) return selectedLabels[0];
+
+    return `${selectedLabels.length} tipos`;
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="shrink-0 px-4 pt-4 pb-3">
-        <h1 className="text-2xl font-bold text-slate-900">
-          Notificaciones
-        </h1>
+        <h1 className="text-2xl font-bold text-slate-900">Notificaciones</h1>
 
         <p className="mt-1 text-sm text-slate-500">
           Busca, filtra y revisa las notificaciones enviadas.
         </p>
       </div>
 
-      <div className="shrink-0 flex items-center justify-between gap-3 px-4 pb-4">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <Input
-            placeholder="Buscar notificación"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            startContent={<Search size={18} className="text-default-400" />}
-            variant="bordered"
-            classNames={{
-              base: "w-full max-w-[360px]",
-              mainWrapper: "w-full",
-              inputWrapper: "h-11 rounded-xl border-default-200 bg-white",
-              input: "text-sm",
-            }}
-          />
-
-          <I18nProvider locale="es-CL">
-            <DateRangePicker
-              label="Rango de fechas"
-              value={{
-                start: dateRange.start,
-                end: dateRange.end,
-              }}
-              onChange={(value) => {
-                if (value) {
-                  setDateRange({
-                    start: value.start,
-                    end: value.end,
-                  });
-                }
-              }}
+      <div className="shrink-0 px-4 pb-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <Input
+              placeholder="Buscar notificación"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              startContent={<Search size={18} className="text-default-400" />}
               variant="bordered"
               classNames={{
-                base: "w-full max-w-[330px]",
+                base: "w-full max-w-[360px]",
+                mainWrapper: "w-full",
                 inputWrapper: "h-11 rounded-xl border-default-200 bg-white",
+                input: "text-sm",
               }}
             />
-          </I18nProvider>
+
+            <I18nProvider locale="es-CL">
+              <DateRangePicker
+                label="Rango de fechas"
+                value={{
+                  start: dateRange.start,
+                  end: dateRange.end,
+                }}
+                onChange={(value) => {
+                  if (value) {
+                    setDateRange({
+                      start: value.start,
+                      end: value.end,
+                    });
+                    setQuickDateFilter("custom");
+                  }
+                }}
+                variant="bordered"
+                classNames={{
+                  base: "w-full max-w-[330px]",
+                  inputWrapper: "h-11 rounded-xl border-default-200 bg-white",
+                }}
+              />
+            </I18nProvider>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2">
+            <Dropdown>
+              <DropdownTrigger>
+                <Button
+                  variant="flat"
+                  startContent={<ListFilter size={18} color="black" />}
+                  className="h-11 min-w-[120px] rounded-xl"
+                >
+                  {getTypeButtonLabel()}
+                </Button>
+              </DropdownTrigger>
+
+              <DropdownMenu
+                aria-label="Notification Types"
+                selectionMode="multiple"
+                selectedKeys={selectedType}
+                closeOnSelect={false}
+                onSelectionChange={(keys) =>
+                  handleSelectionChange(new Set(keys as unknown as string[]))
+                }
+              >
+                {typeOptions.map((type) => (
+                  <DropdownItem key={type.value}>{type.label}</DropdownItem>
+                ))}
+              </DropdownMenu>
+            </Dropdown>
+
+            <Button
+              isIconOnly
+              variant="flat"
+              className="h-11 w-11 rounded-xl"
+              onPress={resetFilters}
+              aria-label="Restablecer filtros"
+            >
+              <RotateCcw size={18} />
+            </Button>
+          </div>
         </div>
 
-        <Dropdown>
-          <DropdownTrigger>
-            <Button
-              variant="flat"
-              startContent={<ListFilter size={18} color="black" />}
-              className="h-11 min-w-[120px] rounded-xl"
-            >
-              Tipo
-            </Button>
-          </DropdownTrigger>
-
-          <DropdownMenu
-            aria-label="Notification Types"
-            selectionMode="multiple"
-            selectedKeys={selectedType}
-            closeOnSelect={false}
-            onSelectionChange={(keys) =>
-              handleSelectionChange(new Set(keys as unknown as string[]))
-            }
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant={quickDateFilter === "today" ? "solid" : "flat"}
+            color={quickDateFilter === "today" ? "primary" : "default"}
+            className="rounded-xl font-semibold"
+            startContent={<CalendarDays size={15} />}
+            onPress={() => applyQuickDateFilter("today")}
           >
-            {typeOptions.map((type) => (
-              <DropdownItem key={type.value}>{type.label}</DropdownItem>
-            ))}
-          </DropdownMenu>
-        </Dropdown>
+            Hoy
+          </Button>
+
+          <Button
+            size="sm"
+            variant={quickDateFilter === "last7" ? "solid" : "flat"}
+            color={quickDateFilter === "last7" ? "primary" : "default"}
+            className="rounded-xl font-semibold"
+            onPress={() => applyQuickDateFilter("last7")}
+          >
+            Últimos 7 días
+          </Button>
+
+          <Button
+            size="sm"
+            variant={quickDateFilter === "month" ? "solid" : "flat"}
+            color={quickDateFilter === "month" ? "primary" : "default"}
+            className="rounded-xl font-semibold"
+            onPress={() => applyQuickDateFilter("month")}
+          >
+            Este mes
+          </Button>
+
+          {quickDateFilter === "custom" && (
+            <Chip color="primary" variant="flat" className="font-medium">
+              Rango personalizado
+            </Chip>
+          )}
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto px-4 pb-2">
