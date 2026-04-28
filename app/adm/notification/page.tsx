@@ -1,14 +1,16 @@
 "use client";
-import {useState } from "react";
-import styles from "../../../styles/rutas.module.css";
+
+import { useState } from "react";
 import NotificationTable from "@/components/Notification/NotificationTable";
 import NotificationADD from "@/components/Notification/NotificationADD";
 import NotificationModal from "@/components/Notification/NotificationModal";
+import layoutStyles from "@/styles/panelLayout.module.css";
+
 export default function Admin_Notification() {
-  const [selectedNotification, setSelectedNotification] = useState(null);
+  const [selectedNotification, setSelectedNotification] = useState<any>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const handleRowClick = (notification:any) => {
+  const handleRowClick = (notification: any) => {
     console.log(notification);
     setSelectedNotification(notification);
     setIsModalOpen(true);
@@ -18,8 +20,9 @@ export default function Admin_Notification() {
     setIsModalOpen(false);
     setSelectedNotification(null);
   };
-    return (
-    <div className={styles.RutasDiv}>
+
+  return (
+    <div className={layoutStyles.pageShell}>
       {selectedNotification && (
         <NotificationModal
           isOpen={isModalOpen}
@@ -27,11 +30,13 @@ export default function Admin_Notification() {
           onClose={handleCloseModal}
         />
       )}
-      <div className={styles.divTab}>
+
+      <div className={layoutStyles.mainPanel}>
         <NotificationTable onRowClick={handleRowClick} />
       </div>
-      <div className={styles.divMenu}>
-        <div className={styles.blq}>
+
+      <div className={layoutStyles.sidePanel}>
+        <div className={layoutStyles.sideContent}>
           <NotificationADD />
         </div>
       </div>

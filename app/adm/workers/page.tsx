@@ -1,17 +1,18 @@
 "use client";
-import React, { useState} from "react";
-import styles from "../../../styles/workers.module.css";
+
 import TablaWorkers from "@/components/Workers/TablaWorkers";
 import { FormularioTrabajador } from "@/components/Workers/FormularioTrabajador";
+import layoutStyles from "@/styles/panelLayout.module.css";
+
 export default function Admin_Workers() {
-  
   return (
-    <div className={styles.RutasDiv}>
-      <div className={styles.divTab}>
-        <TablaWorkers/>
+    <div className={layoutStyles.pageShell}>
+      <div className={layoutStyles.mainPanel}>
+        <TablaWorkers />
       </div>
-      <div className={styles.divMenu}>
-        <div className={styles.blq}>
+
+      <div className={layoutStyles.sidePanel}>
+        <div className={layoutStyles.sideContent}>
           <FormularioTrabajador />
         </div>
       </div>

@@ -29,6 +29,7 @@ import { URL } from "../../config/config";
 import { useAuth } from "../../app/AuthContext";
 import Drawer_Worker from "./Drawer_Worker";
 import { useDisclosure } from "@heroui/react";
+import layoutStyles from "@/styles/panelLayout.module.css";
 
 interface Worker {
   _id: string;
@@ -194,28 +195,50 @@ export default function TablaWorkers() {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <Drawer_Worker
         isOpen={isOpen}
         onOpenChange={handleDrawerClose}
         onOpen={onOpen}
         workerKey={workerKey}
       />
-
-      <div className="flex justify-between items-center mb-4 p-2 gap-4">
+  
+      <div className="shrink-0 px-4 pt-4 pb-3">
+        <h1 className="text-2xl font-bold text-slate-900">
+          Administración de Trabajadores
+        </h1>
+    
+        <p className="mt-1 text-sm text-slate-500">
+          Busca, filtra y gestiona a los trabajadores registrados.
+        </p>
+      </div>
+    
+      <div className="shrink-0 flex items-center justify-between gap-3 px-4 pb-4">
         <Input
           placeholder="Buscar por Rut, nombre, cargo o correo..."
-          startContent={<Search />}
+          startContent={<Search size={18} />}
           value={filterValue}
           onValueChange={onSearchChange}
           variant="bordered"
+          classNames={{
+            base: "w-full max-w-[720px]",
+            mainWrapper: "w-full",
+            inputWrapper: "h-11 rounded-xl border-default-200 bg-white",
+            input: "text-sm",
+          }}
         />
-
+  
         <Dropdown>
           <DropdownTrigger>
-            <Button endContent={<ChevronDown />}>Cargo</Button>
+            <Button
+              endContent={<ChevronDown size={18} />}
+              variant="flat"
+              className="h-11 min-w-[120px] rounded-xl"
+            >
+              Cargo
+            </Button>
           </DropdownTrigger>
-
+        
           <DropdownMenu
             aria-label="Filtrar por cargo"
             selectionMode="single"
@@ -230,15 +253,18 @@ export default function TablaWorkers() {
           </DropdownMenu>
         </Dropdown>
       </div>
-
-      <div ref={tableContainerRef} className="flex-grow overflow-auto">
+        
+      <div
+        ref={tableContainerRef}
+        className="min-h-0 flex-1 overflow-auto px-4 pb-2"
+      >
         <Table
           aria-label="Tabla de trabajadores con búsqueda y filtro"
           classNames={{
-            table: "min-h-[100px] max-h-[93.5vh]",
-            wrapper: "bg-[transparent]",
+            table: "min-h-[100px] min-w-[900px]",
+            wrapper: "bg-transparent p-0 shadow-none overflow-visible",
             th: "bg-gradient-to-r from-blue-100 via-purple-200 to-blue-100 text-slate-800 font-bold text-sm",
-            td: "text-md",
+            td: "text-md whitespace-nowrap",
           }}
           shadow="none"
           isStriped
@@ -246,7 +272,7 @@ export default function TablaWorkers() {
           selectionMode="single"
           onRowAction={(key) => {
             const selectedItem = list.items.find((item) => item._id === key);
-
+          
             if (selectedItem) {
               handleDrawer(selectedItem.Rut);
             }
@@ -254,69 +280,70 @@ export default function TablaWorkers() {
         >
           <TableHeader>
             <TableColumn
+              key="Rut"
               style={{
                 textAlign: "center",
                 borderRightWidth: "0.2rem",
                 borderColor: "white",
               }}
-              key="Rut"
             >
               RUT
             </TableColumn>
-
+            
             <TableColumn
+              key="Nombre"
               style={{
                 textAlign: "center",
                 borderRightWidth: "0.2rem",
                 borderColor: "white",
               }}
-              key="Nombre"
             >
               NOMBRE
             </TableColumn>
-
+            
             <TableColumn
+              key="cargo"
               style={{
                 textAlign: "center",
                 borderRightWidth: "0.2rem",
                 borderColor: "white",
               }}
-              key="cargo"
             >
               CARGO
             </TableColumn>
-
+            
             <TableColumn
+              key="correo"
               style={{
                 textAlign: "center",
                 borderRightWidth: "0.2rem",
                 borderColor: "white",
               }}
-              key="correo"
             >
               CORREO
             </TableColumn>
           </TableHeader>
-
+            
           <TableBody
             items={paginatedItems}
             isLoading={isLoading}
             loadingContent={<Spinner label="Cargando trabajadores..." />}
+            emptyContent="No hay trabajadores para mostrar."
           >
             {(item: Worker) => (
               <TableRow key={item._id}>
                 <TableCell style={{ textAlign: "center", cursor: "pointer" }}>
                   {item.Rut}
                 </TableCell>
-
+            
                 <TableCell style={{ textAlign: "center", cursor: "pointer" }}>
                   {item.Nombre}
                 </TableCell>
-
+            
                 <TableCell style={{ textAlign: "center", cursor: "pointer" }}>
                   {item.cargo.charAt(0).toUpperCase() + item.cargo.slice(1)}
                 </TableCell>
-
+            
                 <TableCell style={{ textAlign: "center", cursor: "pointer" }}>
                   {item.correo}
                 </TableCell>
@@ -325,17 +352,15 @@ export default function TablaWorkers() {
           </TableBody>
         </Table>
       </div>
-
-      {totalPages >= 1 && (
-        <div className="mt-auto flex justify-center pb-4">
-          <Pagination
-            total={totalPages}
-            page={currentPage}
-            variant="faded"
-            onChange={(page) => setCurrentPage(page)}
-          />
-        </div>
-      )}
+          
+      <div className="shrink-0 flex justify-center py-3">
+        <Pagination
+          total={totalPages}
+          page={currentPage}
+          variant="faded"
+          onChange={(page) => setCurrentPage(page)}
+        />
+      </div>
     </div>
   );
 }

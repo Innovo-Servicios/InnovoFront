@@ -1,4 +1,5 @@
 "use client";
+
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Table,
@@ -14,7 +15,6 @@ import {
   DropdownTrigger,
   DropdownMenu,
   DropdownItem,
-  Tooltip,
   Pagination,
   Chip,
   Spinner,
@@ -24,13 +24,18 @@ import { parseDate } from "@internationalized/date";
 import { URL } from "@/config/config";
 import { useAuth } from "@/app/AuthContext";
 import { I18nProvider } from "@react-aria/i18n";
+
 interface Notification {
-  _id: number | string; // Puede ser número o cadena
+  _id: number | string;
   tipo: "msg" | "alert" | "document";
   titulo: string;
   mensaje: string;
   contenido: string;
   fecha: string;
+}
+
+interface NotificationWithKey extends Notification {
+  uniqueKey: string | number;
 }
 
 interface NotificationTableProps {
@@ -41,6 +46,7 @@ export default function NotificationTable({
   onRowClick,
 }: NotificationTableProps) {
   const { token, socket } = useAuth();
+
   const [searchQuery, setSearchQuery] = useState("");
   const [dateRange, setDateRange] = useState({
     start: parseDate(
@@ -50,59 +56,15 @@ export default function NotificationTable({
     ),
     end: parseDate(new Date().toISOString().split("T")[0]),
   });
+
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [selectedType, setSelectedType] = useState(new Set(["Todos"]));
+  const [selectedType, setSelectedType] = useState<Set<string>>(
+    new Set(["Todos"])
+  );
   const [currentPage, setCurrentPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
+
   const itemsPerPage = 12;
-  const fetchNotifications = async () => {
-    const datos_body = {
-      token,
-      inicio: dateRange.start.toString(),
-      fin: dateRange.end.toString(),
-    };
-    const response = await fetch(`${URL}/notificaciones/buscarNotificacion`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(datos_body),
-    });
-    const data = await response.json();
-    setNotifications(data);
-    setIsLoading(false);
-  };
-  useEffect(() => {
-    if (socket && token) {
-      fetchNotifications();
-
-      socket.on("nuevaNotificacion", () => {
-        fetchNotifications();
-      });
-
-      return () => {
-        socket.off("nuevaNotificacion");
-      };
-    }
-  }, [token, dateRange, socket]);
-
-  const filteredNotifications = useMemo(() => {
-    return notifications
-      .filter((notification) => {
-        return (
-          (searchQuery === "" ||
-            notification.mensaje
-              .toLowerCase()
-              .includes(searchQuery.toLowerCase()) ||
-            notification.titulo
-              .toLowerCase()
-              .includes(searchQuery.toLowerCase())) &&
-          (selectedType.has("Todos") || selectedType.has(notification.tipo))
-        );
-      })
-      .map((notification, index) => ({
-        ...notification,
-        uniqueKey: notification._id || `temp-key-${index}`,
-      }));
-  }, [notifications, searchQuery, selectedType]);
 
   const typeOptions = [
     { value: "Todos", label: "Todos" },
@@ -110,113 +72,215 @@ export default function NotificationTable({
     { value: "alert", label: "Alertas" },
     { value: "document", label: "Documentos" },
   ];
-  // Paginación
-  const totalPages = Math.ceil(filteredNotifications.length / itemsPerPage);
+
+  const fetchNotifications = useCallback(async () => {
+    if (!token) {
+      setNotifications([]);
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+
+      const datos_body = {
+        token,
+        inicio: dateRange.start.toString(),
+        fin: dateRange.end.toString(),
+      };
+
+      const response = await fetch(`${URL}/notificaciones/buscarNotificacion`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(datos_body),
+      });
+
+      const data = await response.json();
+
+      setNotifications(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Error al cargar notificaciones:", error);
+      setNotifications([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [token, dateRange.start, dateRange.end]);
+
+  useEffect(() => {
+    if (!token) return;
+
+    fetchNotifications();
+  }, [token, dateRange, fetchNotifications]);
+
+  useEffect(() => {
+    if (!socket || !token) return;
+
+    socket.on("nuevaNotificacion", () => {
+      fetchNotifications();
+    });
+
+    return () => {
+      socket.off("nuevaNotificacion");
+    };
+  }, [socket, token, fetchNotifications]);
+
+  const filteredNotifications = useMemo<NotificationWithKey[]>(() => {
+    return notifications
+      .filter((notification) => {
+        const lowerSearchQuery = searchQuery.toLowerCase();
+
+        const matchesSearch =
+          searchQuery === "" ||
+          notification.mensaje.toLowerCase().includes(lowerSearchQuery) ||
+          notification.titulo.toLowerCase().includes(lowerSearchQuery) ||
+          notification.contenido.toLowerCase().includes(lowerSearchQuery);
+
+        const matchesType =
+          selectedType.has("Todos") || selectedType.has(notification.tipo);
+
+        return matchesSearch && matchesType;
+      })
+      .map((notification, index) => ({
+        ...notification,
+        uniqueKey: notification._id || `temp-key-${index}`,
+      }));
+  }, [notifications, searchQuery, selectedType]);
+
+  const totalPages = useMemo(() => {
+    return Math.max(Math.ceil(filteredNotifications.length / itemsPerPage), 1);
+  }, [filteredNotifications.length]);
+
   const paginatedNotifications = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
+
     return filteredNotifications.slice(startIndex, startIndex + itemsPerPage);
-  }, [filteredNotifications, currentPage, itemsPerPage]);
-  // Manejo de selección
-  const handleSelectionChange = useCallback(
-    (keys: Set<string>, setSelectedType: Function) => {
-      let updatedKeys = new Set(keys);
-      if (Array.from(updatedKeys).pop() === "Todos") {
-        updatedKeys.clear();
-        updatedKeys.add("Todos");
-      }
-      // Si "Todos" está seleccionado y se elige otro, "Todos" se deselecciona automáticamente
-      if (updatedKeys.has("Todos") && updatedKeys.size > 1) {
-        updatedKeys.delete("Todos");
-      }
+  }, [filteredNotifications, currentPage]);
 
-      // Si todos los demás elementos están seleccionados, activar "Todos" y deseleccionar el resto
-      const allOtherSelected = typeOptions
-        .filter((option) => option.value !== "Todos")
-        .every((option) => updatedKeys.has(option.value));
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
-      if (allOtherSelected) {
-        updatedKeys.clear();
-        updatedKeys.add("Todos");
-      }
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedType, dateRange]);
 
-      // Si no hay ningún elemento seleccionado, activar "Todos" automáticamente
-      if (updatedKeys.size === 0) {
-        updatedKeys.add("Todos");
-      }
+  const handleSelectionChange = useCallback((keys: Set<string>) => {
+    const updatedKeys = new Set(keys);
 
-      setSelectedType(updatedKeys);
-    },
-    []
-  );
+    if (Array.from(updatedKeys).pop() === "Todos") {
+      updatedKeys.clear();
+      updatedKeys.add("Todos");
+    }
+
+    if (updatedKeys.has("Todos") && updatedKeys.size > 1) {
+      updatedKeys.delete("Todos");
+    }
+
+    const allOtherSelected = typeOptions
+      .filter((option) => option.value !== "Todos")
+      .every((option) => updatedKeys.has(option.value));
+
+    if (allOtherSelected) {
+      updatedKeys.clear();
+      updatedKeys.add("Todos");
+    }
+
+    if (updatedKeys.size === 0) {
+      updatedKeys.add("Todos");
+    }
+
+    setSelectedType(updatedKeys);
+  }, []);
 
   return (
-    <div className="flex flex-col h-full p-4">
-      <h1 className="text-2xl font-bold mb-4">Notificaciones</h1>
-      <div className="flex flex-wrap gap-4 mb-4">
-        <Input
-          label="Buscar"
-          placeholder="Buscar notificación"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          startContent={<Search className="text-default-400" />}
-          className="max-w-xs"
-          variant="bordered"
-        />
-        <I18nProvider locale="es-CL">
-          <DateRangePicker
-            label="Rango de fechas"
-            defaultValue={{
-              start: dateRange.start,
-              end: dateRange.end,
-            }}
-            className="max-w-xs"
-            onChange={(value) => {
-              if (value) {
-                setDateRange({ start: value.start, end: value.end });
-              }
-            }}
-            variant="bordered"
-          />
-        </I18nProvider>
-        <div className="ml-auto">
-          <Dropdown>
-            <DropdownTrigger>
-              <Button
-                variant="bordered"
-                startContent={<ListFilter size={24} color="black" />}
-                size="lg"
-              >
-                Tipo
-              </Button>
-            </DropdownTrigger>
-            <DropdownMenu
-              aria-label="Notification Types"
-              selectionMode="multiple"
-              selectedKeys={selectedType}
-              closeOnSelect={false} // Evita que el dropdown se cierre al seleccionar
-              onSelectionChange={(keys) =>
-                handleSelectionChange(
-                  new Set(keys as unknown as string[]),
-                  setSelectedType
-                )
-              }
-            >
-              {typeOptions.map((type) => (
-                <DropdownItem key={type.value}>{type.label}</DropdownItem>
-              ))}
-            </DropdownMenu>
-          </Dropdown>
-        </div>
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <div className="shrink-0 px-4 pt-4 pb-3">
+        <h1 className="text-2xl font-bold text-slate-900">
+          Notificaciones
+        </h1>
+
+        <p className="mt-1 text-sm text-slate-500">
+          Busca, filtra y revisa las notificaciones enviadas.
+        </p>
       </div>
 
-      <div className="flex-grow overflow-auto">
+      <div className="shrink-0 flex items-center justify-between gap-3 px-4 pb-4">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <Input
+            placeholder="Buscar notificación"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            startContent={<Search size={18} className="text-default-400" />}
+            variant="bordered"
+            classNames={{
+              base: "w-full max-w-[360px]",
+              mainWrapper: "w-full",
+              inputWrapper: "h-11 rounded-xl border-default-200 bg-white",
+              input: "text-sm",
+            }}
+          />
+
+          <I18nProvider locale="es-CL">
+            <DateRangePicker
+              label="Rango de fechas"
+              value={{
+                start: dateRange.start,
+                end: dateRange.end,
+              }}
+              onChange={(value) => {
+                if (value) {
+                  setDateRange({
+                    start: value.start,
+                    end: value.end,
+                  });
+                }
+              }}
+              variant="bordered"
+              classNames={{
+                base: "w-full max-w-[330px]",
+                inputWrapper: "h-11 rounded-xl border-default-200 bg-white",
+              }}
+            />
+          </I18nProvider>
+        </div>
+
+        <Dropdown>
+          <DropdownTrigger>
+            <Button
+              variant="flat"
+              startContent={<ListFilter size={18} color="black" />}
+              className="h-11 min-w-[120px] rounded-xl"
+            >
+              Tipo
+            </Button>
+          </DropdownTrigger>
+
+          <DropdownMenu
+            aria-label="Notification Types"
+            selectionMode="multiple"
+            selectedKeys={selectedType}
+            closeOnSelect={false}
+            onSelectionChange={(keys) =>
+              handleSelectionChange(new Set(keys as unknown as string[]))
+            }
+          >
+            {typeOptions.map((type) => (
+              <DropdownItem key={type.value}>{type.label}</DropdownItem>
+            ))}
+          </DropdownMenu>
+        </Dropdown>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-auto px-4 pb-2">
         <Table
           aria-label="Notifications table"
           classNames={{
-            table: "min-h-[100px] max-h-[93.5vh]",
-            wrapper: "bg-[transparent] p-0",
-            th: "bg-gradient-to-r from-blue-100 via-purple-100 to-blue-100 bg-[length:500%_100%] text-slate-800 font-bold text-sm border-r-2 border-white last:border-r-0",
-            td: "text-md px-2 text-center",
+            table: "min-h-[100px] min-w-[900px]",
+            wrapper: "bg-transparent p-0 shadow-none overflow-visible",
+            th: "bg-gradient-to-r from-blue-100 via-purple-200 to-blue-100 text-slate-800 font-bold text-sm border-r-2 border-white last:border-r-0",
+            td: "text-md px-2 text-center whitespace-nowrap",
           }}
           shadow="none"
           isStriped
@@ -230,14 +294,16 @@ export default function NotificationTable({
             <TableColumn className="text-center">CONTENIDO</TableColumn>
             <TableColumn className="text-center">FECHA</TableColumn>
           </TableHeader>
+
           <TableBody
             items={paginatedNotifications}
             isLoading={isLoading}
-            loadingContent={<Spinner label="Cargando trabajadores..." />}
+            loadingContent={<Spinner label="Cargando notificaciones..." />}
+            emptyContent="No hay notificaciones para mostrar."
           >
-            {(item: Notification) => (
+            {(item: NotificationWithKey) => (
               <TableRow
-                key={item._id}
+                key={item.uniqueKey}
                 onClick={() => onRowClick(item)}
                 className="cursor-pointer"
               >
@@ -261,36 +327,40 @@ export default function NotificationTable({
                     )}
                   </Chip>
                 </TableCell>
+
                 <TableCell>
                   {item.titulo.length > 24
                     ? `${item.titulo.substring(0, 24)}...`
                     : item.titulo}
                 </TableCell>
+
                 <TableCell>
                   {item.mensaje.length > 30
                     ? `${item.mensaje.substring(0, 30)}...`
                     : item.mensaje}
                 </TableCell>
+
                 <TableCell>
                   {item.contenido.length > 50
                     ? `${item.contenido.substring(0, 50)}...`
                     : item.contenido}
                 </TableCell>
-                <TableCell>{item.fecha.split('T')[0]}</TableCell>
+
+                <TableCell>{item.fecha.split("T")[0]}</TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
       </div>
-      {totalPages > 1 && (
-        <div className="mt-auto flex justify-center pb-4">
-          <Pagination
-            total={totalPages}
-            initialPage={1}
-            onChange={(page) => setCurrentPage(page)}
-          />
-        </div>
-      )}
+
+      <div className="shrink-0 flex justify-center py-3">
+        <Pagination
+          total={totalPages}
+          page={currentPage}
+          variant="faded"
+          onChange={(page) => setCurrentPage(page)}
+        />
+      </div>
     </div>
   );
 }
