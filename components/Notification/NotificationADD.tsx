@@ -50,7 +50,7 @@ const MAX_SCHEDULE_DAYS = 90;
 
 export default function NotificationADD() {
   const [notificationType, setNotificationType] = useState("msg");
-  const { token, socket } = useAuth();
+  const { token } = useAuth();
 
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [isScheduled, setIsScheduled] = useState(false);
@@ -206,10 +206,7 @@ export default function NotificationADD() {
     setIsPeopleDropdownOpen(false);
   };
 
-  const handleWhitoutDocument = async (
-    data: any,
-    socket: { emit: (arg0: string, arg1: any) => void }
-  ) => {
+  const handleWhitoutDocument = async (data: any) => {
     const response = await fetch(`${URL}/notificaciones/crearNotificacion`, {
       method: "POST",
       headers: {
@@ -220,7 +217,6 @@ export default function NotificationADD() {
 
     if (response.ok) {
       alert("Notificación enviada correctamente");
-      socket.emit("notification", data);
       resetForm();
     } else {
       console.log("Error al enviar la notificación");
@@ -278,7 +274,10 @@ export default function NotificationADD() {
       }
     }
 
-    if (!socket) return;
+    if (!token) {
+      alert("La sesión no está disponible. Vuelva a iniciar sesión.");
+      return;
+    }
 
     const objetivo =
       recipientMode === "all"
@@ -334,13 +333,12 @@ export default function NotificationADD() {
 
       if (response.ok) {
         alert("Notificación enviada correctamente");
-        socket.emit("notification", data);
         resetForm();
       } else {
         console.log("Error al enviar la notificación");
       }
     } else {
-      handleWhitoutDocument(data, socket);
+      handleWhitoutDocument(data);
     }
   };
 
