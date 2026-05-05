@@ -206,11 +206,24 @@ export default function NotificationADD() {
     setIsPeopleDropdownOpen(false);
   };
 
+  const notifyRequestError = async (response: Response) => {
+    const errorText = await response.text();
+    const message =
+      errorText || `Error al enviar la notificación (${response.status})`;
+
+    console.error("Error al enviar la notificación", {
+      status: response.status,
+      body: errorText,
+    });
+    alert(message);
+  };
+
   const handleWhitoutDocument = async (data: any) => {
     const response = await fetch(`${URL}/notificaciones/crearNotificacion`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify(data),
     });
@@ -219,7 +232,7 @@ export default function NotificationADD() {
       alert("Notificación enviada correctamente");
       resetForm();
     } else {
-      console.log("Error al enviar la notificación");
+      await notifyRequestError(response);
     }
   };
 
@@ -327,6 +340,7 @@ export default function NotificationADD() {
         `${URL}/notificaciones/crearNotificacionDocumento`,
         {
           method: "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
           body: formData,
         }
       );
@@ -335,7 +349,7 @@ export default function NotificationADD() {
         alert("Notificación enviada correctamente");
         resetForm();
       } else {
-        console.log("Error al enviar la notificación");
+        await notifyRequestError(response);
       }
     } else {
       handleWhitoutDocument(data);

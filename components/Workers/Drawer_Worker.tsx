@@ -423,7 +423,7 @@ export default function Drawer_Worker({
             <DrawerBody className="scrollbar-hide">
               <Tabs
                 selectedKey={activeTab}
-                onSelectionChange={(key) => setActiveTab(key.toString())}
+                onSelectionChange={(key) => key && setActiveTab(key.toString())}
                 className="w-full flex justify-center"
               >
                 <Tab key="details" title="Detalles">

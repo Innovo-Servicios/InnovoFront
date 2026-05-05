@@ -23,12 +23,14 @@ export default function Admin() {
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [isActive, setIsActive] = useState(false);
+  const [isBotUpdating, setIsBotUpdating] = useState(false);
   const { socket } = useAuth();
   useEffect(() => {
     if (socket) {
       // Escuchar el evento "estadoActualizado" del backend
       socket.on("estadoActualizado", (estado: boolean) => {
         setIsActive(estado);
+        setIsBotUpdating(false);
       });
 
       // Solicitar el estado del bot al conectar
@@ -41,8 +43,8 @@ export default function Admin() {
     }
   }, [socket]);
   const toggleBot = () => {
-    setIsActive(!isActive);
     if (socket) {
+      setIsBotUpdating(true);
       socket.emit("actualizarEstadoBot", !isActive);
     }
   };
@@ -98,6 +100,8 @@ export default function Admin() {
             color={isActive ? "success" : "default"}
             variant="flat"
             onPress={toggleBot}
+            isLoading={isBotUpdating}
+            isDisabled={!socket || isBotUpdating}
           >
             {isActive ? "Activo" : "Inactivo"}
           </Button>

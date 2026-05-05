@@ -128,6 +128,41 @@ export default function ATETracker() {
     parseDate(new Date().toISOString().split("T")[0])
   );
 
+  const [trabajadores, setTrabajadores] = useState<{ _id: string; Nombre: string }[]>([]);
+  const [assigningAte, setAssigningAte] = useState<string | null>(null);
+  const [selectedTrabajador, setSelectedTrabajador] = useState<string>("");
+
+  const fetchTrabajadores = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${URL}/trabajador/listarTrabajadores`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      const data = await res.json();
+      setTrabajadores(Array.isArray(data) ? data : []);
+    } catch {
+      setTrabajadores([]);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    fetchTrabajadores();
+  }, [fetchTrabajadores]);
+
+  const handleAsignarTrabajador = async (id_ate: string) => {
+    if (!selectedTrabajador) return;
+    await fetch(`${URL}/middleware/editarATE`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, id_ate, Trabajador: selectedTrabajador }),
+    });
+    setAssigningAte(null);
+    setSelectedTrabajador("");
+    fetchATEs();
+  };
+
   const fetchATEs = useCallback(async () => {
     if (!token) return;
 
@@ -246,7 +281,7 @@ export default function ATETracker() {
     return ates.filter((ate) => {
       return (
         ate.tipo.nombre.toLowerCase().includes(query) ||
-        ate.Trabajador.nombre.toLowerCase().includes(query) ||
+        (ate.Trabajador?.nombre ?? "").toLowerCase().includes(query) ||
         ate.direccion.nombre.toLowerCase().includes(query) ||
         ate.fecha_ate.toLowerCase().includes(query) ||
         (ate.comentario || "").toLowerCase().includes(query)
@@ -301,7 +336,7 @@ export default function ATETracker() {
     const workerPendingStats = filteredAtes.reduce((acc, ate) => {
       if (ate.estado) return acc;
 
-      const workerName = ate.Trabajador.nombre;
+      const workerName = ate.Trabajador?.nombre ?? "Sin asignar";
 
       acc[workerName] = (acc[workerName] || 0) + 1;
 
@@ -870,7 +905,7 @@ export default function ATETracker() {
                               </div>
 
                               <p className="truncate text-xs text-slate-500">
-                                {ate.Trabajador.nombre} · {ate.direccion.nombre}
+                                {ate.Trabajador?.nombre ?? "Sin asignar"} · {ate.direccion.nombre}
                               </p>
                             </div>
                           </div>
@@ -892,8 +927,36 @@ export default function ATETracker() {
 
                         <div className="flex items-start gap-2 text-sm text-slate-600">
                           <UserIcon size={18} />
-                          <span>{ate.Trabajador.nombre}</span>
+                          <span>{ate.Trabajador?.nombre ?? "Sin asignar"}</span>
                         </div>
+
+                        {!ate.Trabajador && (
+                          <div className="flex items-center gap-2">
+                            <Select
+                              size="sm"
+                              placeholder="Seleccionar trabajador"
+                              selectedKeys={assigningAte === ate.id ? [selectedTrabajador] : []}
+                              onChange={(e) => {
+                                setAssigningAte(ate.id);
+                                setSelectedTrabajador(e.target.value);
+                              }}
+                              variant="bordered"
+                              className="flex-1"
+                            >
+                              {trabajadores.map((t) => (
+                                <SelectItem key={t._id}>{t.Nombre}</SelectItem>
+                              ))}
+                            </Select>
+                            <Button
+                              size="sm"
+                              color="primary"
+                              isDisabled={assigningAte !== ate.id || !selectedTrabajador}
+                              onPress={() => handleAsignarTrabajador(ate.id)}
+                            >
+                              Asignar
+                            </Button>
+                          </div>
+                        )}
 
                         <div className="flex items-start gap-2 text-sm text-slate-600">
                           <MapPinIcon size={18} />
