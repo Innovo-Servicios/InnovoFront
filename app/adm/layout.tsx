@@ -10,6 +10,7 @@ import {
   LogOut,
   UserRoundSearch,
   MessageSquare,
+  ClipboardList,
 } from "lucide-react";
 import { Tooltip } from "@heroui/tooltip";
 import Link from "next/link";
@@ -23,6 +24,7 @@ export default function AdminLayout({
 }
 const navItems = [
   { href: "/adm", icon: LayoutDashboard, label: "Panel de administración" },
+  { href: "/adm/asignaciones", icon: ClipboardList, label: "Asignaciones" },
   { href: "/adm/workers", icon: Users, label: "Trabajadores" },
   { href: "/adm/followup", icon: UserRoundSearch, label: "Seguimiento" },
   { href: "/adm/notification", icon: BellPlus, label: "Notificaciones" },

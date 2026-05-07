@@ -12,6 +12,7 @@ import {
   Pin,
   Bot,
   BotOff,
+  ClipboardList,
 } from "lucide-react";
 import { Progress } from "@heroui/progress";
 import { Button } from "@heroui/react";
@@ -245,6 +246,25 @@ export default function Admin() {
             <CardBody className="pt-4">
               <p className="text-md text-muted-foreground text-center">
                 Visualiza y gestiona la información de los empleados
+              </p>
+            </CardBody>
+          </Card>
+        </Link>
+        <Link href="/adm/asignaciones">
+          <Card className="overflow-hidden group hover:shadow-lg transition-all duration-300">
+            <CardHeader className={headerGradient}>
+              <CardFooter className="text-lg font-medium">
+                Ver asignaciones
+              </CardFooter>
+              <ClipboardList
+                className="text-secondary group-hover:text-primary transition-colors duration-300"
+                aria-label="Ver asignaciones"
+                size={32}
+              />
+            </CardHeader>
+            <CardBody className="pt-4">
+              <p className="text-md text-muted-foreground text-center">
+                Revisa sectores, fechas y trabajadores asignados
               </p>
             </CardBody>
           </Card>

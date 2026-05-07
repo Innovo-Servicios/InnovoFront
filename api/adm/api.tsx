@@ -31,3 +31,20 @@ export const crearTrabajador = async (rut: string, nombre: string, cargo: string
     return res;
     
 };
+
+export const getVistaAsignaciones = async (
+  token: string,
+  fechaInicio: string,
+  fechaFin: string
+) => {
+  const res = await fetch(`${URL}/asignacion/vistaAsignaciones`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ fechaInicio, fechaFin }),
+  });
+
+  return res;
+};
