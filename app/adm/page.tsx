@@ -24,6 +24,8 @@ export default function Admin() {
   const [dragging, setDragging] = useState(false);
   const [isActive, setIsActive] = useState(false);
   const [isBotUpdating, setIsBotUpdating] = useState(false);
+  const [isUploadingAsignacion, setIsUploadingAsignacion] = useState(false);
+  const [uploadAsignacionMessage, setUploadAsignacionMessage] = useState<string | null>(null);
   const { socket } = useAuth();
   useEffect(() => {
     if (socket) {
@@ -48,10 +50,46 @@ export default function Admin() {
       socket.emit("actualizarEstadoBot", !isActive);
     }
   };
+
+  const handleUploadAsignacion = async () => {
+    if (!file || !token || isUploadingAsignacion) {
+      return;
+    }
+
+    setIsUploadingAsignacion(true);
+    setUploadAsignacionMessage(null);
+
+    try {
+      const response = await uploadAsignacion(file, token);
+      const responseText = await response.text();
+      let responseMessage = responseText;
+
+      try {
+        const parsedResponse = JSON.parse(responseText);
+        responseMessage = parsedResponse.message || responseText;
+      } catch {
+        // La API puede responder texto plano en algunos errores.
+      }
+
+      if (!response.ok) {
+        throw new Error(responseMessage || "No se pudo subir el archivo.");
+      }
+
+      setFile(null);
+      setUploadAsignacionMessage(responseMessage || "Archivo subido correctamente.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo subir el archivo.";
+      setUploadAsignacionMessage(message);
+    } finally {
+      setIsUploadingAsignacion(false);
+    }
+  };
+
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
     if (selectedFile) {
       setFile(selectedFile);
+      setUploadAsignacionMessage(null);
     }
   };
 
@@ -70,6 +108,7 @@ export default function Admin() {
     const droppedFile = event.dataTransfer.files[0];
     if (droppedFile) {
       setFile(droppedFile);
+      setUploadAsignacionMessage(null);
     }
   };
 
@@ -164,7 +203,9 @@ export default function Admin() {
                     size="lg"
                     variant="flat"
                     color="primary"
-                    onPress={() => token && uploadAsignacion(file, token)}
+                    onPress={handleUploadAsignacion}
+                    isLoading={isUploadingAsignacion}
+                    isDisabled={!token || isUploadingAsignacion}
                   >
                     Subir
                   </Button>
@@ -182,6 +223,11 @@ export default function Admin() {
                 </>
               )}
             </label>
+            {uploadAsignacionMessage ? (
+              <p className="pb-4 text-center text-xs text-muted-foreground">
+                {uploadAsignacionMessage}
+              </p>
+            ) : null}
           </CardBody>
         </Card>
         <Link href="/adm/workers">
