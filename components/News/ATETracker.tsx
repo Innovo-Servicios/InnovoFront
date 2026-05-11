@@ -359,13 +359,21 @@ export default function ATETracker() {
       return;
     }
 
+    if (!token) {
+      alert("Sesión expirada. Inicie sesión nuevamente.");
+      return;
+    }
+
+    const authHeaders = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    };
+
     try {
       if (selectedType === "ate") {
         const response = await fetch(`${URL}/excel/ate`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: authHeaders,
           body: JSON.stringify({
             fecha: selectedDate.toString(),
           }),
@@ -390,9 +398,7 @@ export default function ATETracker() {
       } else {
         const response = await fetch(`${URL}/excel/novedad`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: authHeaders,
           body: JSON.stringify({
             fechainicio: dateRange.start.toString(),
             fechafin: dateRange.end.toString(),
@@ -886,20 +892,30 @@ export default function ATETracker() {
                       key={ate.id}
                       id="ate"
                       aria-label="ATE"
+                      classNames={{
+                        trigger: "w-full min-w-0",
+                        titleWrapper: "w-full min-w-0",
+                        title: "w-full min-w-0",
+                      }}
                       title={
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex min-w-0 items-center gap-3">
+                        <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_6rem] items-center gap-3">
+                          <div className="flex min-w-0 flex-1 items-center gap-3">
                             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
                               {getATETypeIcon(ate.tipo.nombre)}
                             </div>
 
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2">
+                            <div className="min-w-0 flex-1 overflow-hidden">
+                              <div className="flex min-w-0 items-center gap-2">
                                 <span className="truncate font-semibold text-slate-900">
                                   {getShortATEType(ate.tipo.nombre)}
                                 </span>
 
-                                <Chip size="sm" color="default" variant="flat">
+                                <Chip
+                                  className="shrink-0"
+                                  size="sm"
+                                  color="default"
+                                  variant="flat"
+                                >
                                   {ate.fecha_ate.split("T")[0]}
                                 </Chip>
                               </div>
@@ -911,7 +927,9 @@ export default function ATETracker() {
                           </div>
 
                           <Chip
+                            className="w-24 shrink-0 justify-center"
                             color={ate.estado ? "success" : "warning"}
+                            size="sm"
                             variant="flat"
                           >
                             {ate.estado ? "Completado" : "Pendiente"}
