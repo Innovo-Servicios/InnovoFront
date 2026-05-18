@@ -1,13 +1,25 @@
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { useAuth } from "@/app/AuthContext"
 import "leaflet/dist/leaflet.css"
 import { divIcon } from "leaflet"
 import { renderToString } from "react-dom/server"
-import { CircleUserRound } from "lucide-react"
+import { CircleUserRound, MapPin } from "lucide-react"
 import CustomMarker from "../CustomMarker"
-import { Card, CardBody, Button } from "@heroui/react"
+import { Card, CardBody } from "@heroui/react"
 import ConnectedWorkers from "./ConnectedWorkers"
 import { MapContainer, TileLayer, useMapEvents } from "react-leaflet"
+import { getATEsAdm } from "@/api/adm/api"
+
+interface AtePin {
+  id: string
+  lat: number
+  lng: number
+  calle: string
+  comentario: string
+  trabajador: string | null
+  tipo: string | null
+  estado: boolean
+}
 
 function MapController({
   selectedWorker,
@@ -31,10 +43,66 @@ function MapController({
 }
 
 export default function Map() {
-  const { socket } = useAuth()
+  const { socket, token, authenticatedFetch } = useAuth()
   const [workers, setWorkers] = useState<Record<string, { ubicacion: [number, number]; nombre: string }>>({})
   const [selectedWorker, setSelectedWorker] = useState<string | null>(null)
   const [isFixed, setIsFixed] = useState(true)
+  const [ates, setAtes] = useState<AtePin[]>([])
+
+  const fetchAtes = useCallback(() => {
+    if (!token) return
+    const today = new Date().toISOString().slice(0, 10)
+    getATEsAdm(token, today, today, authenticatedFetch)
+      .then((res) => res.json())
+      .then((data) => {
+        const pins: AtePin[] = (data.ate ?? [])
+          .filter((a: any) => a.direccion?.lat && a.direccion?.lng)
+          .map((a: any) => ({
+            id: String(a.id),
+            lat: a.direccion.lat,
+            lng: a.direccion.lng,
+            calle: a.direccion.nombre ?? "",
+            comentario: a.comentario ?? "",
+            trabajador: a.Trabajador?.nombre ?? null,
+            tipo: a.tipo?.nombre ?? null,
+            estado: a.estado,
+          }))
+        setAtes(pins)
+      })
+      .catch(() => {})
+  }, [authenticatedFetch, token])
+
+  useEffect(() => {
+    fetchAtes()
+  }, [fetchAtes])
+
+  const ateIcons = useMemo(() => {
+    const buildAteIcon = (isAnswered: boolean) => {
+      const color = isAnswered ? "#16a34a" : "#dc2626"
+      const backgroundColor = isAnswered ? "rgba(22,163,74,0.2)" : "rgba(220,38,38,0.2)"
+      const fill = isAnswered ? "rgba(22,163,74,0.7)" : "rgba(220,38,38,0.7)"
+
+      return divIcon({
+        html: renderToString(
+          <div style={{
+            width: 32, height: 32, borderRadius: "50%",
+            backgroundColor,
+            display: "flex", justifyContent: "center", alignItems: "center",
+          }}>
+            <MapPin size={22} color={color} fill={fill} />
+          </div>
+        ),
+        className: isAnswered ? "ate-marker ate-marker-answered" : "ate-marker ate-marker-pending",
+        iconSize: [32, 32],
+        iconAnchor: [16, 32],
+      })
+    }
+
+    return {
+      answered: buildAteIcon(true),
+      pending: buildAteIcon(false),
+    }
+  }, [])
 
   const customIcon = useMemo(() => {
 
@@ -111,6 +179,16 @@ export default function Map() {
     }
   }, [socket])
 
+  useEffect(() => {
+    if (!socket) return
+
+    socket.on("nuevaAte", fetchAtes)
+
+    return () => {
+      socket.off("nuevaAte", fetchAtes)
+    }
+  }, [fetchAtes, socket])
+
   const handleWorkerSelect = (workerId: string | null) => {
     setSelectedWorker(workerId)
     setIsFixed(true)
@@ -140,8 +218,35 @@ export default function Map() {
             />
           ) : null,
         )}
+        {ates.map((ate) => {
+          const ateIcon = ate.estado ? ateIcons.answered : ateIcons.pending
+
+          return ateIcon ? (
+            <CustomMarker
+              key={ate.id}
+              position={[ate.lat, ate.lng]}
+              icon={ateIcon}
+              label={ate.calle}
+              id={0}
+            >
+              <div style={{ minWidth: 180, fontSize: 13 }}>
+                <p style={{ fontWeight: 600, marginBottom: 2 }}>{ate.calle}</p>
+                {ate.trabajador && <p style={{ color: "#475569" }}>{ate.trabajador}</p>}
+                {ate.tipo && <p style={{ color: "#64748b", fontSize: 11 }}>{ate.tipo}</p>}
+                {ate.comentario && <p style={{ marginTop: 4, fontSize: 11, color: "#64748b" }}>{ate.comentario}</p>}
+                <span style={{
+                  display: "inline-block", marginTop: 6, padding: "1px 8px",
+                  borderRadius: 9999, fontSize: 11,
+                  background: ate.estado ? "#dcfce7" : "#fee2e2",
+                  color: ate.estado ? "#16a34a" : "#dc2626",
+                }}>
+                  {ate.estado ? "Respondida" : "Pendiente"}
+                </span>
+              </div>
+            </CustomMarker>
+          ) : null
+        })}
       </MapContainer>
     </div>
   )
 }
-

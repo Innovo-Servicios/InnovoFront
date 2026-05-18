@@ -20,7 +20,7 @@ import { useAuth } from "../AuthContext";
 import { uploadAsignacion } from "@/api/adm/api";
 import Link from "next/link";
 export default function Admin() {
-  const { token } = useAuth();
+  const { token, authenticatedFetch } = useAuth();
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [isActive, setIsActive] = useState(false);
@@ -61,7 +61,7 @@ export default function Admin() {
     setUploadAsignacionMessage(null);
 
     try {
-      const response = await uploadAsignacion(file, token);
+      const response = await uploadAsignacion(file, token, authenticatedFetch);
       const responseText = await response.text();
       let responseMessage = responseText;
 

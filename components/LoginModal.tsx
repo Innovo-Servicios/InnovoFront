@@ -85,6 +85,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
     
       const response = await fetch(`${URL}/trabajador/login`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },

@@ -129,7 +129,7 @@ export default function Drawer_Worker({
 }: DrawerWorkerProps) {
   const [activeTab, setActiveTab] = useState("details");
   const [worker, setWorker] = useState<WorkerDetails | null>(null);
-  const { token, socket } = useAuth();
+  const { token, socket, authenticatedFetch } = useAuth();
   const [nombre, setNombre] = useState<string>(""); // Nombre del trabajador
   const [correo, setCorreo] = useState<string>(""); // Correo del trabajador
   const [cargo, setCargo] = useState<string>(""); // Cargo del trabajador
@@ -150,7 +150,7 @@ export default function Drawer_Worker({
     end: parseDate(new Date().toISOString().split("T")[0]),
   });
   const fetchWorker = async () => {
-    const response = await fetch(`${URL}/trabajador/datosTrabajador`, {
+    const response = await authenticatedFetch(`${URL}/trabajador/datosTrabajador`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -172,7 +172,7 @@ export default function Drawer_Worker({
       "67337993a35183c85300b0bb",
       "678840c57e67e1e8c95c27b9",
     ];
-    const response = await fetch(`${URL}/tipoDocumento/obtenerTipos`, {
+    const response = await authenticatedFetch(`${URL}/tipoDocumento/obtenerTipos`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -185,7 +185,7 @@ export default function Drawer_Worker({
     setTipoDocumentos(data);
   };
   const fetchSectores = async () => {
-    const response = await fetch(`${URL}/sector/sectorApoyo`, {
+    const response = await authenticatedFetch(`${URL}/sector/sectorApoyo`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -213,7 +213,7 @@ export default function Drawer_Worker({
   };
   const handleDeleteDocuments = async (id: string, rut: string) => {
     if (window.confirm("¿Está seguro de que desea eliminar este documento?")) {
-      const response = await fetch(`${URL}/documento/deleteDocumento`, {
+      const response = await authenticatedFetch(`${URL}/documento/deleteDocumento`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -239,7 +239,7 @@ export default function Drawer_Worker({
       fechainicio: dateRange.start.toString(),
       fechafin: dateRange.end.toString(),
     };
-    const response = await fetch(`${URL}/asignacion/asignarApoyo`, {
+    const response = await authenticatedFetch(`${URL}/asignacion/asignarApoyo`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -263,7 +263,7 @@ export default function Drawer_Worker({
     formData.append("token", token);
     formData.append("objetivo", worker.Rut);
     formData.append("tipo", tipoDocumentosSelected);
-    const response = await fetch(`${URL}/documento/crearDocumento`, {
+    const response = await authenticatedFetch(`${URL}/documento/crearDocumento`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -343,7 +343,7 @@ export default function Drawer_Worker({
         Nuevocorreo: correo,
         Nuevocargo: cargo,
       };
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${URL}/trabajador/modificardatostrabajador`,
         {
           method: "PUT",
@@ -368,7 +368,7 @@ export default function Drawer_Worker({
   const handleDelete = async (rut:string) => {
       if (!token) return;
       if (window.confirm("¿Está seguro de que desea eliminar este trabajador?")) {
-        const res = await fetch(`${URL}/trabajador/eliminartrabajador`, {
+        const res = await authenticatedFetch(`${URL}/trabajador/eliminartrabajador`, {
           method: "DELETE",
           headers: {
             "Content-Type": "application/json",

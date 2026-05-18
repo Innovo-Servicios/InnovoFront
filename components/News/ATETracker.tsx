@@ -48,6 +48,8 @@ import { useAuth } from "@/app/AuthContext";
 interface ATE {
   id: string;
   comentario: string;
+  respuestaComentario?: string | null;
+  Lecturacorrecta?: number | null;
   foto: string;
   tipo: { _id: string; nombre: string };
   direccion: { _id: string; nombre: string };
@@ -67,6 +69,19 @@ type QuickDateFilter = "today" | "last7" | "month" | "custom";
 const toCalendarDate = (date: Date) => {
   return parseDate(date.toISOString().split("T")[0]);
 };
+
+const normalizeAteType = (value?: string | null) =>
+  String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+
+const isAteLecturaType = (value?: string | null) =>
+  normalizeAteType(value) === normalizeAteType("Atención Especial-Lectura");
+
+const formatLecturaCorrecta = (lectura?: number | null) =>
+  lectura === null || lectura === undefined ? "Sin lectura" : lectura.toString();
 
 const getTodayRange = (): DateRangeValue => {
   const today = new Date();
@@ -92,15 +107,15 @@ const getLastSevenDaysRange = (): DateRangeValue => {
 const getCurrentMonthRange = (): DateRangeValue => {
   const today = new Date();
   const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-
+  const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
   return {
     start: toCalendarDate(firstDayOfMonth),
-    end: toCalendarDate(today),
+    end: toCalendarDate(lastDayOfMonth),
   };
 };
 
 export default function ATETracker() {
-  const { socket, token } = useAuth();
+  const { socket, token, authenticatedFetch } = useAuth();
 
   const [ates, setAtes] = useState<ATE[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -135,7 +150,7 @@ export default function ATETracker() {
   const fetchTrabajadores = useCallback(async () => {
     if (!token) return;
     try {
-      const res = await fetch(`${URL}/trabajador/listarTrabajadores`, {
+      const res = await authenticatedFetch(`${URL}/trabajador/listarTrabajadores`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
@@ -145,7 +160,7 @@ export default function ATETracker() {
     } catch {
       setTrabajadores([]);
     }
-  }, [token]);
+  }, [authenticatedFetch, token]);
 
   useEffect(() => {
     fetchTrabajadores();
@@ -153,7 +168,7 @@ export default function ATETracker() {
 
   const handleAsignarTrabajador = async (id_ate: string) => {
     if (!selectedTrabajador) return;
-    await fetch(`${URL}/middleware/editarATE`, {
+    await authenticatedFetch(`${URL}/middleware/editarATE`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token, id_ate, Trabajador: selectedTrabajador }),
@@ -167,7 +182,7 @@ export default function ATETracker() {
     if (!token) return;
 
     try {
-      const response = await fetch(`${URL}/middleware/obtenerATE_Adm`, {
+      const response = await authenticatedFetch(`${URL}/middleware/obtenerATE_Adm`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -192,7 +207,7 @@ export default function ATETracker() {
       console.error("Error al obtener ATEs:", error);
       setAtes([]);
     }
-  }, [token]);
+  }, [authenticatedFetch, token]);
 
   useEffect(() => {
     fetchATEs();
@@ -221,7 +236,7 @@ export default function ATETracker() {
         fin: value.end.toString(),
       };
 
-      const response = await fetch(`${URL}/middleware/obtenerATE_Adm`, {
+      const response = await authenticatedFetch(`${URL}/middleware/obtenerATE_Adm`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -371,7 +386,7 @@ export default function ATETracker() {
 
     try {
       if (selectedType === "ate") {
-        const response = await fetch(`${URL}/excel/ate`, {
+        const response = await authenticatedFetch(`${URL}/excel/ate`, {
           method: "POST",
           headers: authHeaders,
           body: JSON.stringify({
@@ -396,7 +411,7 @@ export default function ATETracker() {
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
       } else {
-        const response = await fetch(`${URL}/excel/novedad`, {
+        const response = await authenticatedFetch(`${URL}/excel/novedad`, {
           method: "POST",
           headers: authHeaders,
           body: JSON.stringify({
@@ -428,13 +443,19 @@ export default function ATETracker() {
   };
 
   const sendNovedad = async () => {
+    if (!token) {
+      alert("Sesión expirada. Inicie sesión nuevamente.");
+      return;
+    }
+
     try {
-      const response = await fetch(`${URL}/novedad/correo`, {
+      const response = await authenticatedFetch(`${URL}/novedad/correo`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          token,
           fecha: selectedSendDate.toString(),
         }),
       });
@@ -450,13 +471,19 @@ export default function ATETracker() {
   };
 
   const sendVerificacion = async () => {
+    if (!token) {
+      alert("Sesión expirada. Inicie sesión nuevamente.");
+      return;
+    }
+
     try {
-      const response = await fetch(`${URL}/novedad/verificacion`, {
+      const response = await authenticatedFetch(`${URL}/novedad/verificacion`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          token,
           fecha: selectedSendDate.toString(),
         }),
       });
@@ -988,6 +1015,26 @@ export default function ATETracker() {
                               className="mt-1 flex-shrink-0"
                             />
                             <span>{ate.comentario}</span>
+                          </div>
+                        )}
+
+                        {ate.respuestaComentario && (
+                          <div className="flex items-start gap-2 text-sm text-slate-600">
+                            <MessageSquareMore
+                              size={18}
+                              className="mt-1 flex-shrink-0"
+                            />
+                            <span>{ate.respuestaComentario}</span>
+                          </div>
+                        )}
+
+                        {isAteLecturaType(ate.tipo?.nombre) && ate.estado && (
+                          <div className="flex items-start gap-2 text-sm text-slate-600">
+                            <BookOpenIcon
+                              size={18}
+                              className="mt-1 flex-shrink-0"
+                            />
+                            <span>Lectura correcta: {formatLecturaCorrecta(ate.Lecturacorrecta)}</span>
                           </div>
                         )}
 

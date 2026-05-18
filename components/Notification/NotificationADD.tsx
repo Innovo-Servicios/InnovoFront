@@ -24,6 +24,8 @@ import {
   Search,
   ChevronDown,
   Check,
+  Download,
+  ShieldCheck,
 } from "lucide-react";
 import {
   now,
@@ -37,9 +39,25 @@ import { URL } from "../../config/config";
 interface Worker {
   Rut: string;
   Nombre: string;
+  cargo?: string;
 }
 
 type RecipientMode = "all" | "role" | "people";
+
+interface SignatureCodeRow {
+  trabajadorId: string;
+  rut: string;
+  nombre: string;
+  code: string;
+}
+
+interface NotificationCreateResponse {
+  message?: string;
+  notificationId?: string;
+  requiereFirma?: boolean;
+  expiresAt?: string;
+  codigos?: SignatureCodeRow[];
+}
 
 const TITLE_MAX_LENGTH = 70;
 const DESCRIPTION_MAX_LENGTH = 120;
@@ -50,12 +68,15 @@ const MAX_SCHEDULE_DAYS = 90;
 
 export default function NotificationADD() {
   const [notificationType, setNotificationType] = useState("msg");
-  const { token } = useAuth();
+  const { token, authenticatedFetch } = useAuth();
 
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduledDate, setScheduledDate] = useState(now(getLocalTimeZone()));
   const [selectedQuickSchedule, setSelectedQuickSchedule] = useState<string | null>(null);
+  const [requiresSignature, setRequiresSignature] = useState(false);
+  const [signatureCodes, setSignatureCodes] = useState<SignatureCodeRow[]>([]);
+  const [signatureExpiresAt, setSignatureExpiresAt] = useState<string | null>(null);
 
   const [recipientMode, setRecipientMode] = useState<RecipientMode>("all");
   const [destinatarios, setDestinatarios] = useState<string[]>([]);
@@ -204,6 +225,7 @@ export default function NotificationADD() {
     setSelectedQuickSchedule(null);
     setNotificationType("msg");
     setIsPeopleDropdownOpen(false);
+    setRequiresSignature(false);
   };
 
   const notifyRequestError = async (response: Response) => {
@@ -218,19 +240,66 @@ export default function NotificationADD() {
     alert(message);
   };
 
+  const readCreateResponse = async (
+    response: Response
+  ): Promise<NotificationCreateResponse> => {
+    const contentType = response.headers.get("content-type") || "";
+
+    if (contentType.includes("application/json")) {
+      return response.json();
+    }
+
+    const message = await response.text();
+    return { message };
+  };
+
+  const handleCreateSuccess = async (response: Response) => {
+    const payload = await readCreateResponse(response);
+    const codigos = Array.isArray(payload.codigos) ? payload.codigos : [];
+
+    setSignatureCodes(codigos);
+    setSignatureExpiresAt(payload.expiresAt || null);
+    alert(payload.message || "Notificación enviada correctamente");
+    resetForm();
+  };
+
+  const csvValue = (value: string | null | undefined) =>
+    `"${String(value || "").replace(/"/g, '""')}"`;
+
+  const exportSignatureCodes = () => {
+    if (signatureCodes.length === 0) return;
+
+    const expiresAt = signatureExpiresAt
+      ? new Date(signatureExpiresAt).toLocaleString("es-CL")
+      : "";
+    const rows = [
+      ["Nombre", "RUT", "Código", "Vence"].map(csvValue).join(","),
+      ...signatureCodes.map((row) =>
+        [row.nombre, row.rut, row.code, expiresAt].map(csvValue).join(",")
+      ),
+    ];
+    const blob = new Blob([rows.join("\n")], {
+      type: "text/csv;charset=utf-8",
+    });
+    const href = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = `codigos-notificacion-${Date.now()}.csv`;
+    link.click();
+    window.URL.revokeObjectURL(href);
+  };
+
   const handleWhitoutDocument = async (data: any) => {
-    const response = await fetch(`${URL}/notificaciones/crearNotificacion`, {
+    const response = await authenticatedFetch(`${URL}/notificaciones/crearNotificacion`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify(data),
     });
 
     if (response.ok) {
-      alert("Notificación enviada correctamente");
-      resetForm();
+      await handleCreateSuccess(response);
     } else {
       await notifyRequestError(response);
     }
@@ -301,6 +370,10 @@ export default function NotificationADD() {
 
     const cargo = recipientMode === "role" ? selectRoles : [];
 
+    const scheduledDatePayload = isScheduled
+      ? scheduledDate.toDate().toISOString()
+      : null;
+
     const data = {
       token,
       objetivo,
@@ -308,12 +381,11 @@ export default function NotificationADD() {
       titulo: title,
       mensaje: description,
       contenido: content,
-      fechaProgramacion: isScheduled
-        ? scheduledDate.toString().split(".")[0]
-        : null,
+      fechaProgramacion: scheduledDatePayload,
       archivo: file,
       cargo,
       programada: isScheduled,
+      requiereFirma: requiresSignature,
     };
 
     if (notificationType === "document") {
@@ -330,24 +402,23 @@ export default function NotificationADD() {
       formData.append("contenido", content);
       formData.append(
         "fechaProgramacion",
-        isScheduled ? scheduledDate.toString().split(".")[0] : ""
+        scheduledDatePayload || ""
       );
       formData.append("programada", String(isScheduled));
+      formData.append("requiereFirma", String(requiresSignature));
       formData.append("file", file as Blob);
       formData.append("cargo", JSON.stringify(cargo));
 
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${URL}/notificaciones/crearNotificacionDocumento`,
         {
           method: "POST",
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
           body: formData,
         }
       );
 
       if (response.ok) {
-        alert("Notificación enviada correctamente");
-        resetForm();
+        await handleCreateSuccess(response);
       } else {
         await notifyRequestError(response);
       }
@@ -357,7 +428,7 @@ export default function NotificationADD() {
   };
 
   const fetchWorkers = async () => {
-    const res = await fetch(`${URL}/trabajador/listarTrabajadores`, {
+    const res = await authenticatedFetch(`${URL}/trabajador/listarTrabajadores`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -380,7 +451,7 @@ export default function NotificationADD() {
     if (token != null) {
       fetchWorkers();
     }
-  }, [token]);
+  }, [authenticatedFetch, token]);
 
   useEffect(() => {
     if (!isScheduled) return;
@@ -537,6 +608,65 @@ export default function NotificationADD() {
           Completa los datos para enviar una nueva notificación.
         </p>
       </div>
+
+      {signatureCodes.length > 0 && (
+        <section className="mb-4 shrink-0 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+                <ShieldCheck size={20} />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-emerald-900">
+                  Códigos de firma generados
+                </h2>
+                <p className="text-xs text-emerald-700">
+                  Vencen{" "}
+                  {signatureExpiresAt
+                    ? new Date(signatureExpiresAt).toLocaleString("es-CL")
+                    : "en 12 horas"}
+                  .
+                </p>
+              </div>
+            </div>
+
+            <Button
+              size="sm"
+              color="success"
+              variant="flat"
+              startContent={<Download size={16} />}
+              onPress={exportSignatureCodes}
+            >
+              Exportar
+            </Button>
+          </div>
+
+          <div className="max-h-40 overflow-y-auto rounded-xl border border-emerald-200 bg-white">
+            <table className="w-full text-left text-xs">
+              <thead className="sticky top-0 bg-emerald-100 text-emerald-900">
+                <tr>
+                  <th className="px-3 py-2">Trabajador</th>
+                  <th className="px-3 py-2">RUT</th>
+                  <th className="px-3 py-2">Código</th>
+                </tr>
+              </thead>
+              <tbody>
+                {signatureCodes.map((row) => (
+                  <tr key={row.trabajadorId} className="border-t border-emerald-100">
+                    <td className="px-3 py-2 font-semibold text-slate-800">
+                      {row.nombre}
+                    </td>
+                    <td className="px-3 py-2 text-slate-600">{row.rut}</td>
+                    <td className="px-3 py-2 font-mono text-sm font-bold text-emerald-800">
+                      {row.code}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       <div className="form-scroll min-h-0 flex-1 overflow-y-auto pr-2">
         <form className="space-y-5">
@@ -1039,6 +1169,26 @@ export default function NotificationADD() {
                     adelante.
                   </p>
                 </div>
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <Checkbox
+              isSelected={requiresSignature}
+              onValueChange={setRequiresSignature}
+            >
+              Requiere firma y aceptación
+            </Checkbox>
+
+            {requiresSignature && (
+              <div className="mt-4 flex items-start gap-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-3 text-sm text-emerald-700">
+                <ShieldCheck size={18} className="mt-0.5 flex-shrink-0" />
+                <p>
+                  Se generará un código único de 6 dígitos para cada
+                  destinatario. El usuario deberá firmar con ese código y luego
+                  presionar Acepto dentro de las próximas 12 horas.
+                </p>
               </div>
             )}
           </section>
