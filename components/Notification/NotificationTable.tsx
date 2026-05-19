@@ -97,7 +97,7 @@ const getCurrentMonthRange = (): DateRangeValue => {
 export default function NotificationTable({
   onRowClick,
 }: NotificationTableProps) {
-  const { token, socket } = useAuth();
+  const { token, socket, authenticatedFetch } = useAuth();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [dateRange, setDateRange] = useState<DateRangeValue>(getTodayRange);
@@ -168,7 +168,7 @@ export default function NotificationTable({
         fin: dateRange.end.toString(),
       };
 
-      const response = await fetch(`${URL}/notificaciones/buscarNotificacion`, {
+      const response = await authenticatedFetch(`${URL}/notificaciones/buscarNotificacion`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(datos_body),
@@ -184,7 +184,7 @@ export default function NotificationTable({
     } finally {
       setIsLoading(false);
     }
-  }, [token, dateRange.start, dateRange.end]);
+  }, [authenticatedFetch, token, dateRange.start, dateRange.end]);
 
   useEffect(() => {
     if (!token) return;

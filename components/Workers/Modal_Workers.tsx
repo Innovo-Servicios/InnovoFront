@@ -70,14 +70,14 @@ export default function WorkerModal({
   const [correo, setCorreo] = useState<string>("");
   const [cargo, setCargo] = useState<string>("");
   const [Mod,setMod] = useState<boolean>(false);
-  const { token, socket} = useAuth();
+  const { token, socket, authenticatedFetch } = useAuth();
   const fetchWorkerDetails = async () => {
     const data = {
       token: token,
       rut: rut,
     };
     try {
-      const response = await fetch(`${URL}/trabajador/obtenerTrabajador`, {
+      const response = await authenticatedFetch(`${URL}/trabajador/obtenerTrabajador`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -103,7 +103,7 @@ export default function WorkerModal({
         Nuevonombre: nombre,
         Nuevocorreo: correo,
       };
-      const response = await fetch(`${URL}/trabajador/modificardatostrabajador`, {
+      const response = await authenticatedFetch(`${URL}/trabajador/modificardatostrabajador`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),

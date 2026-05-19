@@ -2,8 +2,15 @@
 import { URL } from "../../config/config";
 type Fetcher = typeof fetch;
 
-export const crearTrabajador = async (rut: string, nombre: string, cargo: string, correo: string, clave: string) => {
-    const res = await fetch(`${URL}/trabajador/crearTrabajador`, {
+export const crearTrabajador = async (
+  rut: string,
+  nombre: string,
+  cargo: string,
+  correo: string,
+  clave: string,
+  fetcher: Fetcher = fetch
+) => {
+    const res = await fetcher(`${URL}/trabajador/crearTrabajador`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

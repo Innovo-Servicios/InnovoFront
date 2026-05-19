@@ -4,7 +4,6 @@ import {
   DrawerContent,
   DrawerHeader,
   DrawerBody,
-  Image,
   Chip,
   Divider,
   CardBody,
@@ -12,7 +11,7 @@ import {
   CardHeader,
 } from "@heroui/react";
 import { Calendar, MapPin, FileText, Hash, Clock, Briefcase, AtSign } from "lucide-react";
-import { URL } from "@/config/config";
+import AuthenticatedImage from "@/components/common/AuthenticatedImage";
 interface Novedad {
   id: string;
   TipoNovedad: string;
@@ -52,34 +51,6 @@ export default function NovedadDrawer({
   tiponovedad,
 }: NovedadDrawerProps) {
   if (!novedad) return null; 
-  const downloadFile = (fileUri: string, fileName: string) => {
-    try {
-      const parsedUri = new window.URL(fileUri, window.location.origin);
-      const allowedBase = new window.URL(URL, window.location.origin);
-      const allowedPath =
-        allowedBase.pathname === "/" ? "/" : allowedBase.pathname;
-
-      if (!["http:", "https:"].includes(parsedUri.protocol)) {
-        throw new Error("Protocolo de archivo no permitido");
-      }
-      if (parsedUri.origin !== allowedBase.origin) {
-        throw new Error("Origen de archivo no permitido para SSRF");
-      }
-      if (allowedPath !== "/" && !parsedUri.pathname.startsWith(allowedPath)) {
-        throw new Error("Ruta de archivo no permitida");
-      }
-
-      const link = document.createElement("a");
-      link.href = parsedUri.toString();
-      link.setAttribute("download", fileName); // Forzar la descarga con el nombre original
-      link.rel = "noopener noreferrer";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (error) {
-      console.error("Error al descargar el archivo:", error);
-    }
-  };
   return (
     <Drawer
       isOpen={isOpen}
@@ -127,14 +98,12 @@ export default function NovedadDrawer({
           {novedad.Fotografia &&
             /\.(jpg|jpeg|png|gif)$/i.test(novedad.Fotografia) && (
               <Card>
-                <Image
+                <AuthenticatedImage
                   isZoomed
                   alt="Fotografia"
-                  src={`${URL}/IMG_NOVEDADES/${
-                    novedad.Fotografia.split("/IMG_NOVEDADES")[1]
-                  }`}
+                  filePath={novedad.Fotografia}
                   className="object-cover w-full max-h-[50vh]"
-                  onClick={() => downloadFile(`${URL}/IMG_NOVEDADES${novedad.Fotografia.split("/IMG_NOVEDADES")[1]}`, "Fotografia")}
+                  downloadName="Fotografia"
                 />
               </Card>
             )}

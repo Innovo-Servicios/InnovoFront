@@ -18,7 +18,6 @@ import {
   SelectItem,
   Select,
   DatePicker,
-  Image,
   DateRangePicker,
 } from "@heroui/react";
 import {
@@ -43,6 +42,7 @@ import { parseDate, CalendarDate } from "@internationalized/date";
 import { I18nProvider } from "@react-aria/i18n";
 import { URL } from "@/config/config";
 import { useAuth } from "@/app/AuthContext";
+import AuthenticatedImage from "@/components/common/AuthenticatedImage";
 
 
 interface ATE {
@@ -508,37 +508,6 @@ export default function ATETracker() {
       sendNovedad();
     } else {
       sendVerificacion();
-    }
-  };
-
-  const downloadFile = (fileUri: string, fileName: string) => {
-    try {
-      const parsedUri = new window.URL(fileUri, window.location.origin);
-      const allowedBase = new window.URL(URL, window.location.origin);
-      const allowedPath =
-        allowedBase.pathname === "/" ? "/" : allowedBase.pathname;
-
-      if (!["http:", "https:"].includes(parsedUri.protocol)) {
-        throw new Error("Protocolo de archivo no permitido");
-      }
-
-      if (parsedUri.origin !== allowedBase.origin) {
-        throw new Error("Origen de archivo no permitido para evitar SSRF");
-      }
-
-      if (allowedPath !== "/" && !parsedUri.pathname.startsWith(allowedPath)) {
-        throw new Error("Ruta de archivo no permitida");
-      }
-
-      const link = document.createElement("a");
-      link.href = parsedUri.toString();
-      link.setAttribute("download", fileName);
-      link.rel = "noopener noreferrer";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (error) {
-      console.error("Error al descargar el archivo:", error);
     }
   };
 
@@ -1042,19 +1011,14 @@ export default function ATETracker() {
                           <div className="flex flex-col items-center justify-center gap-2 text-sm text-slate-500">
                             <Divider />
 
-                            <Image
-                              src={`${URL}/${ate.fotografia}`}
+                            <AuthenticatedImage
+                              filePath={ate.fotografia}
                               isZoomed
                               alt="Fotografía de la ATE"
                               width={300}
                               height={300}
                               className="mt-4 mb-4 border border-slate-200 shadow-lg"
-                              onClick={() =>
-                                downloadFile(
-                                  `${URL}/${ate.fotografia}`,
-                                  "FotografiaATE"
-                                )
-                              }
+                              downloadName="FotografiaATE"
                             />
                           </div>
                         )}

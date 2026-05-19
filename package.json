@@ -38,7 +38,7 @@
     "dotenv": "16.4.5",
     "echarts": "5.5.1",
     "eslint": "9.14.0",
-    "eslint-config-next": "^15",
+    "eslint-config-next": "^15.5.18",
     "framer-motion": "11.11.17",
     "intl-messageformat": "10.7.6",
     "jsonwebtoken": "9.0.2",
@@ -46,7 +46,7 @@
     "leaflet.label": "0.2.4",
     "lucide-react": "0.456.0",
     "mapbox-gl": "3.8.0",
-    "next": "^15",
+    "next": "^15.5.18",
     "next-themes": "0.4.3",
     "postcss": "8.4.49",
     "puppeteer": "23.8.0",
@@ -68,5 +68,13 @@
     "@types/leaflet": "1.9.14",
     "eslint-define-config": "2.1.0",
     "sonar-scanner": "^3.1.0"
+  },
+  "overrides": {
+    "@eslint/plugin-kit": "^0.7.1",
+    "basic-ftp": "^6.0.1",
+    "brace-expansion": "^5.0.6",
+    "ip-address": "^10.2.0",
+    "postcss": "^8.5.14",
+    "ws": "^8.20.1"
   }
 }

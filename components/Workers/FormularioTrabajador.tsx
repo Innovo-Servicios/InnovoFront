@@ -49,7 +49,7 @@ const NAME_REGEX = /^[A-Za-zÁÉÍÓÚáéíóúÑñÜü\s'-]+$/;
 
 export function FormularioTrabajador() {
   const { rut, updateRut, isValid } = useRut();
-  const { token, socket } = useAuth();
+  const { token, socket, authenticatedFetch } = useAuth();
 
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [isLoadingWorkers, setIsLoadingWorkers] = useState(false);
@@ -198,7 +198,7 @@ export function FormularioTrabajador() {
     try {
       setIsLoadingWorkers(true);
 
-      const response = await fetch(`${URL}/trabajador/listarTrabajadores`, {
+      const response = await authenticatedFetch(`${URL}/trabajador/listarTrabajadores`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -356,13 +356,18 @@ export function FormularioTrabajador() {
     try {
       setIsSubmitting(true);
 
-      await crearTrabajador(
+      const response = await crearTrabajador(
         rut.raw,
         formData.Nombre.trim(),
         formData.cargo,
         formData.correo.trim(),
-        generatedPassword
+        generatedPassword,
+        authenticatedFetch
       );
+
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
 
       const nuevoTrabajador = {
         Rut: rut.raw,

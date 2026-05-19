@@ -3,10 +3,12 @@
 import { useState } from 'react'
 import { Button, Input } from "@heroui/react"
 import {URL} from '../../config/config'
+import { useAuth } from '@/app/AuthContext'
 export default function ExcelUploader() {
   const [file, setFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadStatus, setUploadStatus] = useState<string | null>(null)
+  const { authenticatedFetch } = useAuth()
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -28,7 +30,7 @@ export default function ExcelUploader() {
     formData.append('file', file)
 
     try {
-      const response = await fetch(URL + '/excel/upload', {
+      const response = await authenticatedFetch(URL + '/excel/upload', {
         method: 'POST',
         body: formData,
       })
@@ -71,4 +73,3 @@ export default function ExcelUploader() {
     </form>
   )
 }
-
