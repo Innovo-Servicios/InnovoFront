@@ -77,3 +77,89 @@ export const getVistaAsignaciones = async (
 
   return res;
 };
+
+export const getAssignmentCreatorCatalog = async (
+  token: string,
+  empresa?: string,
+  fetcher: Fetcher = fetch
+) => {
+  const res = await fetcher(`${URL}/asignacion/creador/catalogo`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ empresa }),
+  });
+
+  return res;
+};
+
+export const getAssignmentCreatorTemplate = async (
+  token: string,
+  empresa: string,
+  fetcher: Fetcher = fetch
+) => {
+  const res = await fetcher(`${URL}/asignacion/creador/plantilla`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ empresa }),
+  });
+
+  return res;
+};
+
+export const saveAssignmentCreatorTemplate = async (
+  token: string,
+  empresa: string,
+  plantilla: unknown,
+  fetcher: Fetcher = fetch
+) => {
+  const res = await fetcher(`${URL}/asignacion/creador/plantilla`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ empresa, plantilla }),
+  });
+
+  return res;
+};
+
+export const previewAssignmentCreator = async (
+  token: string,
+  payload: unknown,
+  fetcher: Fetcher = fetch
+) => {
+  const res = await fetcher(`${URL}/asignacion/creador/previsualizar`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  return res;
+};
+
+export const confirmAssignmentCreator = async (
+  token: string,
+  payload: unknown,
+  fetcher: Fetcher = fetch
+) => {
+  const res = await fetcher(`${URL}/asignacion/creador/confirmar`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  return res;
+};

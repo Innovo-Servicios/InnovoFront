@@ -16,6 +16,8 @@ import {
   Select,
   SelectItem,
   Spinner,
+  Tab,
+  Tabs,
 } from "@heroui/react";
 import {
   CalendarDays,
@@ -29,6 +31,7 @@ import {
 
 import { useAuth } from "@/app/AuthContext";
 import { getVistaAsignaciones } from "@/api/adm/api";
+import AssignmentCreator from "@/components/Asignaciones/AssignmentCreator";
 
 interface AssignmentWorker {
   id: string | null;
@@ -256,13 +259,19 @@ export default function AsignacionesPage() {
       <div className="mb-6 flex flex-col gap-2">
         <div className="flex items-center gap-3">
           <ClipboardList size={30} className="text-primary" />
-          <h1 className="text-3xl font-bold">Vista de asignaciones</h1>
+          <h1 className="text-3xl font-bold">Asignaciones</h1>
         </div>
         <p className="text-sm text-slate-500">
-          Revisa de forma rápida las asignaciones generadas y los trabajadores asignados.
+          Crea asignaciones mensuales y revisa de forma rápida las asignaciones generadas.
         </p>
       </div>
 
+      <Tabs aria-label="Asignaciones" variant="underlined" className="mb-4">
+        <Tab key="crear" title="Crear asignaciones">
+          <AssignmentCreator onSaved={fetchAsignaciones} />
+        </Tab>
+        <Tab key="vista" title="Vista actual">
+          <div className="pt-2">
       {/* Date range + search + refresh */}
       <div className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-[1fr_1fr_1.4fr_auto]">
         <Input label="Desde" type="date" value={fechaInicio} onValueChange={setFechaInicio} variant="bordered" />
@@ -582,6 +591,9 @@ export default function AsignacionesPage() {
           </Modal>
         </>
       )}
+          </div>
+        </Tab>
+      </Tabs>
     </div>
   );
 }

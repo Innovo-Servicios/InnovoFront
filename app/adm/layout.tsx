@@ -11,6 +11,7 @@ import {
   UserRoundSearch,
   MessageSquare,
   ClipboardList,
+  ShieldCheck,
 } from "lucide-react";
 import { Tooltip } from "@heroui/tooltip";
 import Link from "next/link";
@@ -29,6 +30,7 @@ const navItems = [
   { href: "/adm/followup", icon: UserRoundSearch, label: "Seguimiento" },
   { href: "/adm/notification", icon: BellPlus, label: "Notificaciones" },
   { href: "/adm/novedades", icon: MessageSquare, label: "Novedades" },
+  { href: "/adm/verificaciones", icon: ShieldCheck, label: "Verificaciones" },
   { href: "/adm/rutas", icon: Map, label: "Rutas" },
   { href: "/adm/direcciones", icon: MapPinned, label: "Direcciones" },
 ];
