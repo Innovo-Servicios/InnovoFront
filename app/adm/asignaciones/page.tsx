@@ -1,5 +1,6 @@
 "use client";
 
+
 import layoutStyles from "@/styles/panelLayout.module.css";
 import AssignmentCreator from "@/components/Asignaciones/AssignmentCreator";
 import AsignacionesSidePanel from "@/components/Asignaciones/AsignacionesSidePanel";
