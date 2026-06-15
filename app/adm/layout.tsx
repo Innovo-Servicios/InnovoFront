@@ -30,7 +30,7 @@ const navItems = [
   { href: "/adm/followup", icon: UserRoundSearch, label: "Seguimiento" },
   { href: "/adm/notification", icon: BellPlus, label: "Notificaciones" },
   { href: "/adm/novedades", icon: MessageSquare, label: "Novedades" },
-  { href: "/adm/verificaciones", icon: ShieldCheck, label: "Verificaciones" },
+  { href: "/adm/verificaciones", icon: ShieldCheck, label: "Validaciones terreno" },
   { href: "/adm/rutas", icon: Map, label: "Rutas" },
   { href: "/adm/direcciones", icon: MapPinned, label: "Direcciones" },
 ];

@@ -147,6 +147,23 @@ export const previewAssignmentCreator = async (
   return res;
 };
 
+export const previewManualAssignmentCreator = async (
+  token: string,
+  payload: unknown,
+  fetcher: Fetcher = fetch
+) => {
+  const res = await fetcher(`${URL}/asignacion/creador/manual/previsualizar`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  return res;
+};
+
 export const confirmAssignmentCreator = async (
   token: string,
   payload: unknown,

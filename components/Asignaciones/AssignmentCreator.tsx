@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Autocomplete,
+  AutocompleteItem,
   Button,
   Card,
   CardBody,
@@ -18,6 +20,7 @@ import {
   CheckCircle2,
   Dice5,
   Lock,
+  PencilLine,
   Save,
   Shuffle,
   Users,
@@ -25,9 +28,11 @@ import {
 
 import {
   confirmAssignmentCreator,
+  getVistaAsignaciones,
   getAssignmentCreatorCatalog,
   getAssignmentCreatorTemplate,
   previewAssignmentCreator,
+  previewManualAssignmentCreator,
   saveAssignmentCreatorTemplate,
 } from "@/api/adm/api";
 import { useAuth } from "@/app/AuthContext";
@@ -100,11 +105,33 @@ interface RouteDay {
   reparto: string;
 }
 
+interface ManualAssignmentDraft {
+  fecha: string;
+  tipo: AssignmentType;
+  rutaId: string;
+  sectorId: string;
+  trabajadorId: string;
+}
+
+interface ExistingAssignmentView {
+  id: string;
+  fecha_asignacion: string;
+  tipo: AssignmentType;
+  trabajador: CatalogWorker;
+  sector: {
+    id: string | null;
+    nombre: string;
+    numero: number | null;
+    ruta: number | null;
+    empresa: string;
+  };
+}
+
 interface PreviewAssignment {
   key: string;
   fecha: string;
   tipo: AssignmentType;
-  source: "fija" | "rotativa" | "restante";
+  source: "fija" | "rotativa" | "restante" | "manual";
   trabajador: CatalogWorker;
   sector: CatalogSector;
   conflicto: null | {
@@ -131,6 +158,7 @@ interface AssignmentPreview {
     fija: number;
     rotativa: number;
     restante: number;
+    manual: number;
   }>;
   asignaciones: PreviewAssignment[];
   omitidas: Array<{
@@ -184,8 +212,15 @@ const formatDate = (date: string) =>
 const sourceLabel = (source: PreviewAssignment["source"]) => {
   if (source === "fija") return "Fija";
   if (source === "rotativa") return "Rotativa";
+  if (source === "manual") return "Manual";
   return "Restante";
 };
+
+const manualCellKey = (routeId: string, sectorId: string, tipo: AssignmentType) =>
+  `${routeId}:${sectorId}:${tipo}`;
+
+const existingCellKey = (sectorId: string, fecha: string, tipo: AssignmentType) =>
+  `${sectorId}:${fecha}:${tipo}`;
 
 interface AssignmentCreatorProps {
   onSaved?: () => void;
@@ -211,6 +246,8 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
+  const [isLoadingExistingAssignments, setIsLoadingExistingAssignments] = useState(false);
+  const [creatorMode, setCreatorMode] = useState<"automatico" | "manual">("automatico");
 
   const [fixedWorker, setFixedWorker] = useState("");
   const [fixedSector, setFixedSector] = useState("");
@@ -218,6 +255,9 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
   const [restrictionWorker, setRestrictionWorker] = useState("");
   const [restrictionSectors, setRestrictionSectors] = useState<string[]>([]);
   const [leftoverTypes, setLeftoverTypes] = useState<AssignmentType[]>([...ASSIGNMENT_TYPES]);
+  const [activeManualRouteId, setActiveManualRouteId] = useState("");
+  const [manualAssignments, setManualAssignments] = useState<ManualAssignmentDraft[]>([]);
+  const [existingAssignments, setExistingAssignments] = useState<ExistingAssignmentView[]>([]);
 
   const sectorById = useMemo(
     () => new Map(catalog.sectores.map((sector) => [sector.id, sector])),
@@ -227,6 +267,29 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
     () => new Map(catalog.trabajadores.map((worker) => [worker.id, worker])),
     [catalog.trabajadores],
   );
+  const manualRouteSectors = useMemo(
+    () => catalog.sectores.filter((sector) => sector.rutaId === activeManualRouteId),
+    [activeManualRouteId, catalog.sectores],
+  );
+  const activeManualRoute = useMemo(
+    () => catalog.rutas.find((route) => route.id === activeManualRouteId) || null,
+    [activeManualRouteId, catalog.rutas],
+  );
+  const manualAssignmentsByCell = useMemo(() => {
+    const map = new Map<string, ManualAssignmentDraft>();
+    for (const assignment of manualAssignments) {
+      map.set(manualCellKey(assignment.rutaId, assignment.sectorId, assignment.tipo), assignment);
+    }
+    return map;
+  }, [manualAssignments]);
+  const existingAssignmentsByCell = useMemo(() => {
+    const map = new Map<string, ExistingAssignmentView>();
+    for (const assignment of existingAssignments) {
+      if (!assignment.sector.id) continue;
+      map.set(existingCellKey(assignment.sector.id, assignment.fecha_asignacion, assignment.tipo), assignment);
+    }
+    return map;
+  }, [existingAssignments]);
 
   const monthBounds = useMemo(() => {
     const [yearText, monthText] = monthValue.split("-");
@@ -280,6 +343,21 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
     }
   }, [authenticatedFetch, token]);
 
+  const loadExistingAssignments = useCallback(async () => {
+    if (!token || !empresa) return;
+    setIsLoadingExistingAssignments(true);
+    try {
+      const response = await getVistaAsignaciones(token, monthBounds.start, monthBounds.end, authenticatedFetch);
+      const data = await parseJsonResponse(response, "No se pudo cargar la disponibilidad de trabajadores.");
+      setExistingAssignments(Array.isArray(data?.asignaciones) ? data.asignaciones : []);
+    } catch (error) {
+      setExistingAssignments([]);
+      setErrorMessage(error instanceof Error ? error.message : "No se pudo cargar la disponibilidad de trabajadores.");
+    } finally {
+      setIsLoadingExistingAssignments(false);
+    }
+  }, [authenticatedFetch, empresa, monthBounds.end, monthBounds.start, token]);
+
   useEffect(() => {
     loadCatalog();
   }, [loadCatalog]);
@@ -294,9 +372,26 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
     if (!empresa) return;
     setPreview(null);
     setConflictChoices({});
+    setManualAssignments([]);
+    setActiveManualRouteId("");
     loadCatalog(empresa);
     loadTemplate(empresa);
   }, [empresa, loadCatalog, loadTemplate]);
+
+  useEffect(() => {
+    if (!empresa) return;
+    loadExistingAssignments();
+  }, [empresa, loadExistingAssignments]);
+
+  useEffect(() => {
+    if (catalog.rutas.length === 0) {
+      setActiveManualRouteId("");
+      return;
+    }
+    if (!activeManualRouteId || !catalog.rutas.some((route) => route.id === activeManualRouteId)) {
+      setActiveManualRouteId(catalog.rutas[0].id);
+    }
+  }, [activeManualRouteId, catalog.rutas]);
 
   const setRouteDate = (routeId: string, tipo: AssignmentType, value: string) => {
     setRouteDays((current) => ({
@@ -306,6 +401,9 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
         [tipo]: value,
       },
     }));
+    setManualAssignments((current) =>
+      current.filter((assignment) => assignment.rutaId !== routeId || assignment.tipo !== tipo)
+    );
     setPreview(null);
     setConflictChoices({});
   };
@@ -430,6 +528,108 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
     }
   };
 
+  const getRouteDate = (routeId: string, tipo: AssignmentType) =>
+    routeDays[routeId]?.[tipo] || "";
+
+  const getManualAssignmentForCell = (sectorId: string, tipo: AssignmentType) =>
+    activeManualRouteId
+      ? manualAssignmentsByCell.get(manualCellKey(activeManualRouteId, sectorId, tipo)) || null
+      : null;
+
+  const getExistingAssignmentForCell = (sectorId: string, tipo: AssignmentType) => {
+    const fecha = getRouteDate(activeManualRouteId, tipo);
+    return fecha ? existingAssignmentsByCell.get(existingCellKey(sectorId, fecha, tipo)) || null : null;
+  };
+
+  const updateManualCell = (sectorId: string, tipo: AssignmentType, trabajadorId: string) => {
+    if (!activeManualRouteId) return;
+    const fecha = getRouteDate(activeManualRouteId, tipo);
+    setManualAssignments((current) => {
+      const next = current.filter((assignment) =>
+        assignment.rutaId !== activeManualRouteId || assignment.sectorId !== sectorId || assignment.tipo !== tipo
+      );
+      if (!trabajadorId || !fecha) return next;
+      return [
+        ...next,
+        {
+          fecha,
+          tipo,
+          rutaId: activeManualRouteId,
+          sectorId,
+          trabajadorId,
+        },
+      ];
+    });
+    setPreview(null);
+    setConflictChoices({});
+    setStatusMessage(null);
+    setErrorMessage(null);
+  };
+
+  const getAvailableWorkersForCell = (sectorId: string, tipo: AssignmentType) => {
+    const fecha = getRouteDate(activeManualRouteId, tipo);
+    const currentAssignment = getManualAssignmentForCell(sectorId, tipo);
+    if (!fecha) return [];
+
+    const usedWorkerIds = new Set<string>();
+    for (const assignment of existingAssignments) {
+      if (assignment.fecha_asignacion === fecha && assignment.trabajador.id) {
+        usedWorkerIds.add(assignment.trabajador.id);
+      }
+    }
+    for (const assignment of manualAssignments) {
+      const sameCell = assignment.rutaId === activeManualRouteId &&
+        assignment.sectorId === sectorId &&
+        assignment.tipo === tipo;
+      if (!sameCell && assignment.fecha === fecha && assignment.trabajadorId) {
+        usedWorkerIds.add(assignment.trabajadorId);
+      }
+    }
+
+    return catalog.trabajadores.filter((worker) =>
+      worker.id === currentAssignment?.trabajadorId || !usedWorkerIds.has(worker.id)
+    );
+  };
+
+  const generateManualPreview = async () => {
+    if (!token || !empresa) return;
+    if (manualAssignments.length === 0) {
+      setErrorMessage("Agrega al menos una asignación manual antes de previsualizar.");
+      return;
+    }
+    const invalidDateIndex = manualAssignments.findIndex((assignment) =>
+      !assignment.fecha || assignment.fecha < monthBounds.start || assignment.fecha > monthBounds.end
+    );
+    if (invalidDateIndex >= 0) {
+      setErrorMessage(`Fila manual ${invalidDateIndex + 1}: la fecha debe estar dentro del mes seleccionado.`);
+      return;
+    }
+
+    setIsPreviewing(true);
+    setStatusMessage(null);
+    setErrorMessage(null);
+    try {
+      const response = await previewManualAssignmentCreator(token, {
+        empresa,
+        asignaciones: manualAssignments.map((assignment) => ({
+          fecha: assignment.fecha,
+          tipo: assignment.tipo,
+          sectorId: assignment.sectorId,
+          trabajadorId: assignment.trabajadorId,
+        })),
+      }, authenticatedFetch);
+      const data = await parseJsonResponse(response, "No se pudo generar la previsualización manual.");
+      setPreview(data);
+      setConflictChoices({});
+      setStatusMessage("Previsualización manual generada. Resuelve conflictos antes de guardar.");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "No se pudo generar la previsualización manual.");
+      setPreview(null);
+    } finally {
+      setIsPreviewing(false);
+    }
+  };
+
   const confirmPreview = async () => {
     if (!token || !empresa || !preview) return;
     setIsConfirming(true);
@@ -454,12 +654,52 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
       setStatusMessage(data.message || "Asignaciones guardadas correctamente.");
       setPreview(null);
       setConflictChoices({});
+      if (creatorMode === "manual") {
+        setManualAssignments([]);
+      }
       onSaved?.();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "No se pudieron guardar las asignaciones.");
     } finally {
       setIsConfirming(false);
     }
+  };
+
+  const renderManualWorkerCell = (sector: CatalogSector, tipo: AssignmentType) => {
+    const fecha = getRouteDate(activeManualRouteId, tipo);
+    const currentAssignment = getManualAssignmentForCell(sector.id, tipo);
+    const existingAssignment = getExistingAssignmentForCell(sector.id, tipo);
+    const availableWorkers = getAvailableWorkersForCell(sector.id, tipo);
+
+    return (
+      <div className="flex min-w-64 flex-col gap-1">
+        <Autocomplete
+          aria-label={`${tipo} ${sector.nombre}`}
+          size="sm"
+          placeholder={fecha ? "Seleccionar trabajador" : "Define fecha"}
+          selectedKey={currentAssignment?.trabajadorId || null}
+          isDisabled={!fecha}
+          onSelectionChange={(key) => updateManualCell(sector.id, tipo, key ? String(key) : "")}
+        >
+          {availableWorkers.map((worker) => (
+            <AutocompleteItem key={worker.id} textValue={`${worker.nombre} ${worker.rut}`}>
+              <div className="flex flex-col">
+                <span>{worker.nombre}</span>
+                <span className="text-xs text-slate-500">{worker.rut || worker.cargo}</span>
+              </div>
+            </AutocompleteItem>
+          ))}
+        </Autocomplete>
+        {fecha ? (
+          <span className="text-xs text-slate-400">{formatDate(fecha)}</span>
+        ) : null}
+        {existingAssignment ? (
+          <div className="rounded-md border border-warning-200 bg-warning-50 px-2 py-1 text-xs text-warning-800">
+            Existe: {existingAssignment.trabajador.nombre}
+          </div>
+        ) : null}
+      </div>
+    );
   };
 
   const conflictRows = preview?.asignaciones.filter((assignment) => assignment.conflicto) ?? [];
@@ -492,29 +732,48 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
               setMonthValue(value);
               setPreview(null);
               setConflictChoices({});
+              setManualAssignments([]);
             }}
             variant="bordered"
           />
-          <Button
-            className="h-14 self-end"
-            variant="flat"
-            startContent={<Save size={18} />}
-            isLoading={isSavingTemplate}
-            isDisabled={!empresa || isSavingTemplate}
-            onPress={saveTemplate}
-          >
-            Guardar plantilla
-          </Button>
-          <Button
-            className="h-14 self-end"
-            color="primary"
-            startContent={!isPreviewing ? <Dice5 size={18} /> : null}
-            isLoading={isPreviewing}
-            isDisabled={!empresa || isPreviewing}
-            onPress={generatePreview}
-          >
-            {preview ? "Regenerar" : "Previsualizar"}
-          </Button>
+          {creatorMode === "automatico" ? (
+            <>
+              <Button
+                className="h-14 self-end"
+                variant="flat"
+                startContent={<Save size={18} />}
+                isLoading={isSavingTemplate}
+                isDisabled={!empresa || isSavingTemplate}
+                onPress={saveTemplate}
+              >
+                Guardar plantilla
+              </Button>
+              <Button
+                className="h-14 self-end"
+                color="primary"
+                startContent={!isPreviewing ? <Dice5 size={18} /> : null}
+                isLoading={isPreviewing}
+                isDisabled={!empresa || isPreviewing}
+                onPress={generatePreview}
+              >
+                {preview ? "Regenerar" : "Previsualizar"}
+              </Button>
+            </>
+          ) : (
+            <>
+              <div className="hidden lg:block" />
+              <Button
+                className="h-14 self-end"
+                color="primary"
+                startContent={!isPreviewing ? <PencilLine size={18} /> : null}
+                isLoading={isPreviewing}
+                isDisabled={!empresa || isPreviewing || manualAssignments.length === 0}
+                onPress={generateManualPreview}
+              >
+                {preview ? "Regenerar manual" : "Previsualizar manual"}
+              </Button>
+            </>
+          )}
         </CardBody>
       </Card>
 
@@ -529,9 +788,42 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
         </Card>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)]">
-        <div className="flex flex-col gap-5">
-          <Card>
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)]">
+        <div className="min-w-0">
+          <div className="mb-4 inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+            <Button
+              size="sm"
+              variant={creatorMode === "automatico" ? "solid" : "light"}
+              color={creatorMode === "automatico" ? "primary" : "default"}
+              onPress={() => {
+                setCreatorMode("automatico");
+                setPreview(null);
+                setConflictChoices({});
+                setStatusMessage(null);
+                setErrorMessage(null);
+              }}
+            >
+              Automático
+            </Button>
+            <Button
+              size="sm"
+              variant={creatorMode === "manual" ? "solid" : "light"}
+              color={creatorMode === "manual" ? "primary" : "default"}
+              onPress={() => {
+                setCreatorMode("manual");
+                setPreview(null);
+                setConflictChoices({});
+                setStatusMessage(null);
+                setErrorMessage(null);
+              }}
+            >
+              Manual por sector
+            </Button>
+          </div>
+
+          {creatorMode === "automatico" ? (
+            <div className="flex flex-col gap-5">
+              <Card>
             <CardHeader className="flex items-center justify-between border-b border-slate-200">
               <div>
                 <h2 className="text-lg font-semibold">Días por ruta</h2>
@@ -781,6 +1073,129 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
               </div>
             </CardBody>
           </Card>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-5">
+              <Card>
+                <CardHeader className="flex items-center justify-between border-b border-slate-200">
+                  <div>
+                    <h2 className="text-lg font-semibold">Fechas por ruta</h2>
+                    <p className="text-sm text-slate-500">Define lectura y reparto; las celdas usan estas fechas.</p>
+                  </div>
+                  {isLoadingExistingAssignments ? <Spinner size="sm" /> : <CalendarDays size={20} />}
+                </CardHeader>
+                <CardBody className="p-0">
+                  <div className="max-h-72 overflow-auto">
+                    <table className="w-full min-w-[620px] border-collapse text-sm">
+                      <thead className="sticky top-0 z-10 bg-slate-100 text-left text-xs uppercase text-slate-500">
+                        <tr>
+                          <th className="px-4 py-3">Ruta</th>
+                          <th className="px-4 py-3">Sectores</th>
+                          <th className="px-4 py-3">Lectura</th>
+                          <th className="px-4 py-3">Reparto</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {catalog.rutas.map((route) => (
+                          <tr key={route.id} className="border-t border-slate-100">
+                            <td className="px-4 py-3 font-medium">Ruta {route.numero ?? "N/A"}</td>
+                            <td className="px-4 py-3">{route.sectores}</td>
+                            <td className="px-4 py-3">
+                              <Input
+                                aria-label={`Lectura ruta ${route.numero}`}
+                                type="date"
+                                size="sm"
+                                min={monthBounds.start}
+                                max={monthBounds.end}
+                                value={routeDays[route.id]?.lectura || ""}
+                                onValueChange={(value) => setRouteDate(route.id, "lectura", value)}
+                              />
+                            </td>
+                            <td className="px-4 py-3">
+                              <Input
+                                aria-label={`Reparto ruta ${route.numero}`}
+                                type="date"
+                                size="sm"
+                                min={monthBounds.start}
+                                max={monthBounds.end}
+                                value={routeDays[route.id]?.reparto || ""}
+                                onValueChange={(value) => setRouteDate(route.id, "reparto", value)}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardBody>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-col gap-3 border-b border-slate-200 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold">Tabla manual por sector</h2>
+                    <p className="text-sm text-slate-500">Asigna trabajador por celda; la lista se filtra por disponibilidad diaria.</p>
+                  </div>
+                  <div className="flex w-full flex-col gap-2 lg:max-w-xs">
+                    <Select
+                      label="Ruta activa"
+                      selectedKeys={activeManualRouteId ? new Set([activeManualRouteId]) : new Set([])}
+                      onSelectionChange={(keys) => setActiveManualRouteId(selectionToArray(keys)[0] || "")}
+                      variant="bordered"
+                      size="sm"
+                    >
+                      {catalog.rutas.map((route) => (
+                        <SelectItem key={route.id}>Ruta {route.numero ?? "N/A"}</SelectItem>
+                      ))}
+                    </Select>
+                    <Chip size="sm" color="primary" variant="flat">
+                      {manualAssignments.length} seleccionadas
+                    </Chip>
+                  </div>
+                </CardHeader>
+                <CardBody className="p-0">
+                  {activeManualRoute ? (
+                    <div className="max-h-[560px] overflow-auto">
+                      <table className="w-full min-w-[900px] border-collapse text-sm">
+                        <thead className="sticky top-0 z-10 bg-slate-100 text-left text-xs uppercase text-slate-500">
+                          <tr>
+                            <th className="px-4 py-3">Sector</th>
+                            <th className="px-4 py-3">Lectura</th>
+                            <th className="px-4 py-3">Reparto</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {manualRouteSectors.map((sector) => (
+                            <tr key={sector.id} className="border-t border-slate-100 align-top">
+                              <td className="w-56 px-4 py-3">
+                                <div className="font-medium">{sector.nombre}</div>
+                                <div className="text-xs text-slate-500">
+                                  Ruta {sector.rutaNumero ?? "N/A"} · Sector {sector.numero ?? "N/A"}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">{renderManualWorkerCell(sector, "lectura")}</td>
+                              <td className="px-4 py-3">{renderManualWorkerCell(sector, "reparto")}</td>
+                            </tr>
+                          ))}
+                          {manualRouteSectors.length === 0 ? (
+                            <tr>
+                              <td colSpan={3} className="px-4 py-10 text-center text-slate-500">
+                                La ruta seleccionada no tiene sectores configurados.
+                              </td>
+                            </tr>
+                          ) : null}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center text-sm text-slate-500">
+                      Selecciona una empresa con rutas configuradas.
+                    </div>
+                  )}
+                </CardBody>
+              </Card>
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col gap-5">
@@ -895,7 +1310,11 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
               ) : (
                 <div className="flex min-h-56 flex-col items-center justify-center gap-3 text-center text-slate-500">
                   <Shuffle size={36} />
-                  <p>Define plantilla y días, luego genera la previsualización mensual.</p>
+                  <p>
+                    {creatorMode === "manual"
+                      ? "Agrega sectores al lote y genera la previsualización manual."
+                      : "Define plantilla y días, luego genera la previsualización mensual."}
+                  </p>
                 </div>
               )}
             </CardBody>
@@ -917,6 +1336,7 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
                   </div>
                   <div className="text-slate-500">
                     {item.lectura} lectura · {item.reparto} reparto · {item.fija} fija · {item.rotativa} rotativa · {item.restante} restante
+                    {item.manual ? ` · ${item.manual} manual` : ""}
                   </div>
                 </div>
               )) : (

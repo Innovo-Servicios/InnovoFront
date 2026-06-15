@@ -16,7 +16,6 @@ import {
   Clock,
   MapPinned,
   RefreshCw,
-  Ruler,
   Save,
   Search,
   ShieldCheck,
@@ -33,7 +32,7 @@ type VerificationItem = {
   id_verificacion: string;
   estado: VerificationStatus;
   fecha: string;
-  radioMetros: number;
+  radioMetros: number | null;
   respuestaAt?: string | null;
   latRespuesta?: number | null;
   lngRespuesta?: number | null;
@@ -77,7 +76,7 @@ type VerificationResponse = {
 type Config = {
   enabled: boolean;
   cantidadDiaria: number;
-  radioMetros: number;
+  radioMetros: number | null;
 };
 
 const padDatePart = (value: number) => String(value).padStart(2, "0");
@@ -123,7 +122,7 @@ export default function AdminVerificaciones() {
   const [trabajadorFilter, setTrabajadorFilter] = useState("todos");
   const [search, setSearch] = useState("");
   const [data, setData] = useState<VerificationResponse | null>(null);
-  const [config, setConfig] = useState<Config>({ enabled: true, cantidadDiaria: 1, radioMetros: 150 });
+  const [config, setConfig] = useState<Config>({ enabled: true, cantidadDiaria: 1, radioMetros: null });
   const [isLoading, setLoading] = useState(false);
   const [isSaving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -139,7 +138,7 @@ export default function AdminVerificaciones() {
     setConfig({
       enabled: Boolean(nextConfig.enabled),
       cantidadDiaria: Number(nextConfig.cantidadDiaria) || 1,
-      radioMetros: Number(nextConfig.radioMetros) || 150,
+      radioMetros: null,
     });
   }, [authenticatedFetch, token]);
 
@@ -156,11 +155,11 @@ export default function AdminVerificaciones() {
       });
       const parsed = await response.json();
       if (!response.ok) {
-        throw new Error(parsed?.message || "No se pudieron cargar las verificaciones.");
+        throw new Error(parsed?.message || "No se pudieron cargar las validaciones de terreno.");
       }
       setData(parsed);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "No se pudieron cargar las verificaciones.");
+      setError(requestError instanceof Error ? requestError.message : "No se pudieron cargar las validaciones de terreno.");
       setData(null);
     } finally {
       setLoading(false);
@@ -230,7 +229,10 @@ export default function AdminVerificaciones() {
       const response = await authenticatedFetch(`${URL}/verificacionTerreno/admin/config`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
+        body: JSON.stringify({
+          enabled: config.enabled,
+          cantidadDiaria: config.cantidadDiaria,
+        }),
       });
       const parsed = await response.json();
       if (!response.ok) {
@@ -257,7 +259,7 @@ export default function AdminVerificaciones() {
     <main className="min-h-screen bg-slate-50 p-4 text-slate-900 md:p-6">
       <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold md:text-3xl">Verificaciones en terreno</h1>
+          <h1 className="text-2xl font-bold md:text-3xl">Validaciones de terreno</h1>
           <p className="mt-1 text-sm text-slate-500">
             Control aleatorio de presencia basado en asignaciones diarias.
           </p>
@@ -273,12 +275,11 @@ export default function AdminVerificaciones() {
         </Button>
       </div>
 
-      <section className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <section className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         <SummaryCard icon={<ShieldCheck size={20} />} label="Total" value={resumen.total} />
         <SummaryCard icon={<Clock size={20} />} label="Pendientes" value={resumen.pendiente} tone="warning" />
         <SummaryCard icon={<CheckCircle2 size={20} />} label="Validadas" value={resumen.validada} tone="success" />
         <SummaryCard icon={<MapPinned size={20} />} label="Coords iniciales" value={resumen.validada_por_captura_inicial} tone="secondary" />
-        <SummaryCard icon={<Ruler size={20} />} label="Fuera de rango" value={resumen.fueraDeRango} tone="danger" />
       </section>
 
       <section className="mb-5 grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm xl:grid-cols-[1fr_380px]">
@@ -333,7 +334,7 @@ export default function AdminVerificaciones() {
               size="sm"
             />
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Input
               label="Cantidad"
               type="number"
@@ -345,17 +346,10 @@ export default function AdminVerificaciones() {
               }
               variant="bordered"
             />
-            <Input
-              label="Radio (m)"
-              type="number"
-              min={20}
-              max={1000}
-              value={String(config.radioMetros)}
-              onValueChange={(value) =>
-                setConfig((current) => ({ ...current, radioMetros: Number(value) || 150 }))
-              }
-              variant="bordered"
-            />
+            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+              <p className="text-xs text-slate-500">Radio</p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">Sin límite de metros</p>
+            </div>
           </div>
           <Button
             className="mt-3 w-full"
@@ -429,9 +423,9 @@ export default function AdminVerificaciones() {
                     {item.fotografia ? (
                       <AuthenticatedImage
                         filePath={item.fotografia}
-                        alt="Foto verificación"
+                        alt="Foto validación"
                         className="h-14 w-14 cursor-pointer rounded-md object-cover"
-                        downloadName={`verificacion-${item.id}.jpg`}
+                        downloadName={`validacion-${item.id}.jpg`}
                       />
                     ) : (
                       <Camera size={18} className="text-slate-300" />
@@ -442,7 +436,7 @@ export default function AdminVerificaciones() {
               {!filtered.length ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-12 text-center text-slate-500">
-                    No hay verificaciones para los filtros seleccionados.
+                    No hay validaciones para los filtros seleccionados.
                   </td>
                 </tr>
               ) : null}
@@ -473,16 +467,16 @@ export default function AdminVerificaciones() {
               {item.fotografia ? (
                 <AuthenticatedImage
                   filePath={item.fotografia}
-                  alt="Foto verificación"
+                  alt="Foto validación"
                   className="mt-3 h-28 w-full cursor-pointer rounded-md object-cover"
-                  downloadName={`verificacion-${item.id}.jpg`}
+                  downloadName={`validacion-${item.id}.jpg`}
                 />
               ) : null}
             </article>
           ))}
           {!filtered.length ? (
             <p className="py-8 text-center text-sm text-slate-500">
-              No hay verificaciones para los filtros seleccionados.
+              No hay validaciones para los filtros seleccionados.
             </p>
           ) : null}
         </div>
