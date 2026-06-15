@@ -50,7 +50,7 @@ export default function TablaWorkers() {
   const tableContainerRef = useRef<HTMLDivElement | null>(null);
 
   const { isOpen, onOpenChange, onOpen } = useDisclosure();
-  const { token, socket } = useAuth();
+  const { token, socket, authenticatedFetch } = useAuth();
 
   const list = useAsyncList<Worker>({
     async load({ signal }) {
@@ -61,7 +61,7 @@ export default function TablaWorkers() {
 
       setIsLoading(true);
 
-      const res = await fetch(`${URL}/trabajador/listarTrabajadores`, {
+      const res = await authenticatedFetch(`${URL}/trabajador/listarTrabajadores`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

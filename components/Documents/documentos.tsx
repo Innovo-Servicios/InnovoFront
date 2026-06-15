@@ -10,7 +10,7 @@ export default function DocumentForm() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [tipo, setTipo] = useState<string>("nose1234");
-  const { token } = useAuth();
+  const { token, authenticatedFetch } = useAuth();
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       setFile(e.target.files[0]);
@@ -38,10 +38,8 @@ export default function DocumentForm() {
       formData.append("objetivo", objetivo);
       formData.append("token", token);
       formData.append("tipo", tipo);
-      console.log({ objetivo, token });
-
       try {
-        const response = await fetch(`${URL}/documento/crearDocumento`, {
+        const response = await authenticatedFetch(`${URL}/documento/crearDocumento`, {
           method: "POST",
           body: formData,
         });

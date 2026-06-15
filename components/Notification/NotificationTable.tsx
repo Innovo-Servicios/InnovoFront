@@ -34,12 +34,14 @@ import { useAuth } from "@/app/AuthContext";
 import { I18nProvider } from "@react-aria/i18n";
 
 interface Notification {
+  id?: number | string;
   _id: number | string;
   tipo: "msg" | "alert" | "document";
   titulo: string;
   mensaje: string;
   contenido: string;
   fecha: string;
+  requiereFirma?: boolean;
 }
 
 interface NotificationWithKey extends Notification {
@@ -95,7 +97,7 @@ const getCurrentMonthRange = (): DateRangeValue => {
 export default function NotificationTable({
   onRowClick,
 }: NotificationTableProps) {
-  const { token, socket } = useAuth();
+  const { token, socket, authenticatedFetch } = useAuth();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [dateRange, setDateRange] = useState<DateRangeValue>(getTodayRange);
@@ -166,7 +168,7 @@ export default function NotificationTable({
         fin: dateRange.end.toString(),
       };
 
-      const response = await fetch(`${URL}/notificaciones/buscarNotificacion`, {
+      const response = await authenticatedFetch(`${URL}/notificaciones/buscarNotificacion`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(datos_body),
@@ -182,7 +184,7 @@ export default function NotificationTable({
     } finally {
       setIsLoading(false);
     }
-  }, [token, dateRange.start, dateRange.end]);
+  }, [authenticatedFetch, token, dateRange.start, dateRange.end]);
 
   useEffect(() => {
     if (!token) return;
@@ -220,7 +222,7 @@ export default function NotificationTable({
       })
       .map((notification, index) => ({
         ...notification,
-        uniqueKey: notification._id || `temp-key-${index}`,
+        uniqueKey: notification._id || notification.id || `temp-key-${index}`,
       }));
   }, [notifications, searchQuery, selectedType]);
 
@@ -419,7 +421,7 @@ export default function NotificationTable({
         <Table
           aria-label="Notifications table"
           classNames={{
-            table: "min-h-[100px] min-w-[900px]",
+            table: "min-h-[100px] min-w-[980px]",
             wrapper: "bg-transparent p-0 shadow-none overflow-visible",
             th: "bg-gradient-to-r from-blue-100 via-purple-200 to-blue-100 text-slate-800 font-bold text-sm border-r-2 border-white last:border-r-0",
             td: "text-md px-2 text-center whitespace-nowrap",
@@ -434,6 +436,7 @@ export default function NotificationTable({
             <TableColumn className="text-center">TÍTULO</TableColumn>
             <TableColumn className="text-center">MENSAJE</TableColumn>
             <TableColumn className="text-center">CONTENIDO</TableColumn>
+            <TableColumn className="text-center">VALIDACIÓN</TableColumn>
             <TableColumn className="text-center">FECHA</TableColumn>
           </TableHeader>
 
@@ -486,6 +489,18 @@ export default function NotificationTable({
                   {item.contenido.length > 50
                     ? `${item.contenido.substring(0, 50)}...`
                     : item.contenido}
+                </TableCell>
+
+                <TableCell>
+                  {item.requiereFirma ? (
+                    <Chip color="success" variant="flat">
+                      Firma
+                    </Chip>
+                  ) : (
+                    <Chip color="default" variant="flat">
+                      Sin firma
+                    </Chip>
+                  )}
                 </TableCell>
 
                 <TableCell>{item.fecha.split("T")[0]}</TableCell>

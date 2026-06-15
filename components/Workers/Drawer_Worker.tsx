@@ -8,7 +8,6 @@ import {
   Tab,
   Card,
   CardBody,
-  Link,
   Chip,
   Divider,
   DatePicker,
@@ -17,7 +16,6 @@ import {
   SelectItem,
   Accordion,
   AccordionItem,
-  Image,
   Button,
   DrawerFooter,
   Input,
@@ -29,6 +27,8 @@ import { I18nProvider } from "@react-aria/i18n";
 import { Spinner } from "@heroui/react";
 import { URL } from "@/config/config";
 import { useAuth } from "@/app/AuthContext";
+import AuthenticatedImage from "@/components/common/AuthenticatedImage";
+import { downloadAuthenticatedFile } from "@/lib/authenticatedFiles";
 import {
   File,
   Check,
@@ -129,7 +129,7 @@ export default function Drawer_Worker({
 }: DrawerWorkerProps) {
   const [activeTab, setActiveTab] = useState("details");
   const [worker, setWorker] = useState<WorkerDetails | null>(null);
-  const { token, socket } = useAuth();
+  const { token, socket, authenticatedFetch } = useAuth();
   const [nombre, setNombre] = useState<string>(""); // Nombre del trabajador
   const [correo, setCorreo] = useState<string>(""); // Correo del trabajador
   const [cargo, setCargo] = useState<string>(""); // Cargo del trabajador
@@ -150,7 +150,7 @@ export default function Drawer_Worker({
     end: parseDate(new Date().toISOString().split("T")[0]),
   });
   const fetchWorker = async () => {
-    const response = await fetch(`${URL}/trabajador/datosTrabajador`, {
+    const response = await authenticatedFetch(`${URL}/trabajador/datosTrabajador`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -172,7 +172,7 @@ export default function Drawer_Worker({
       "67337993a35183c85300b0bb",
       "678840c57e67e1e8c95c27b9",
     ];
-    const response = await fetch(`${URL}/tipoDocumento/obtenerTipos`, {
+    const response = await authenticatedFetch(`${URL}/tipoDocumento/obtenerTipos`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -185,7 +185,7 @@ export default function Drawer_Worker({
     setTipoDocumentos(data);
   };
   const fetchSectores = async () => {
-    const response = await fetch(`${URL}/sector/sectorApoyo`, {
+    const response = await authenticatedFetch(`${URL}/sector/sectorApoyo`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -213,7 +213,7 @@ export default function Drawer_Worker({
   };
   const handleDeleteDocuments = async (id: string, rut: string) => {
     if (window.confirm("¿Está seguro de que desea eliminar este documento?")) {
-      const response = await fetch(`${URL}/documento/deleteDocumento`, {
+      const response = await authenticatedFetch(`${URL}/documento/deleteDocumento`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -239,7 +239,7 @@ export default function Drawer_Worker({
       fechainicio: dateRange.start.toString(),
       fechafin: dateRange.end.toString(),
     };
-    const response = await fetch(`${URL}/asignacion/asignarApoyo`, {
+    const response = await authenticatedFetch(`${URL}/asignacion/asignarApoyo`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -263,7 +263,7 @@ export default function Drawer_Worker({
     formData.append("token", token);
     formData.append("objetivo", worker.Rut);
     formData.append("tipo", tipoDocumentosSelected);
-    const response = await fetch(`${URL}/documento/crearDocumento`, {
+    const response = await authenticatedFetch(`${URL}/documento/crearDocumento`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -276,52 +276,6 @@ export default function Drawer_Worker({
     } else {
       alert("Error al subir el documento.");
       console.error("Error al subir el documento:", response.statusText);
-    }
-  };
-  function buildValidatedDownloadUrl(baseUrl: string, filePath: string): string {
-    try {
-      // Minimal path validation (Do this before new URL(baseUrl), as URL() resolves dot-segments.)
-      if (baseUrl.includes('/../') || /\/%2e%2e\//i.test(baseUrl)) {
-        throw new Error('Invalid path');
-      }
-      if (filePath.includes('/../') || /\/%2e%2e\//i.test(filePath)) {
-        throw new Error('Invalid path');
-      }
-      
-      const url = new window.URL(baseUrl);
-      
-      // Protocol + host checks (KEEP ONLY IF scheme/host may vary.)
-      if (!['http:', 'https:'].includes(url.protocol)) {
-        throw new Error('Invalid protocol');
-      }
-      
-      // Validate path parameters (KEEP ONLY IF original used path params.)
-      if (!/^[A-Za-z0-9_\-\/\.]+$/.test(filePath)) {
-        throw new Error('Invalid parameter');
-      }
-      
-      // Rebuild pathname from fixed literals + validated segments.
-      url.pathname = url.pathname.endsWith('/') ? url.pathname + filePath : url.pathname + '/' + filePath;
-      
-      return url.href;
-    } catch {
-      throw new Error('Invalid URL');
-    }
-  }
-
-  const downloadFile = (fileUri: string, fileName: string) => {
-    try {
-      const validatedUrl = buildValidatedDownloadUrl(URL, fileUri.replace(URL + '/', ''));
-
-      const link = document.createElement("a");
-      link.href = validatedUrl;
-      link.setAttribute("download", fileName); // Forzar la descarga con el nombre original
-      link.rel = "noopener noreferrer";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (error) {
-      console.error("Error al descargar el archivo:", error);
     }
   };
   const handlerMod = async () => {
@@ -343,7 +297,7 @@ export default function Drawer_Worker({
         Nuevocorreo: correo,
         Nuevocargo: cargo,
       };
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${URL}/trabajador/modificardatostrabajador`,
         {
           method: "PUT",
@@ -368,7 +322,7 @@ export default function Drawer_Worker({
   const handleDelete = async (rut:string) => {
       if (!token) return;
       if (window.confirm("¿Está seguro de que desea eliminar este trabajador?")) {
-        const res = await fetch(`${URL}/trabajador/eliminartrabajador`, {
+        const res = await authenticatedFetch(`${URL}/trabajador/eliminartrabajador`, {
           method: "DELETE",
           headers: {
             "Content-Type": "application/json",
@@ -423,7 +377,7 @@ export default function Drawer_Worker({
             <DrawerBody className="scrollbar-hide">
               <Tabs
                 selectedKey={activeTab}
-                onSelectionChange={(key) => setActiveTab(key.toString())}
+                onSelectionChange={(key) => key && setActiveTab(key.toString())}
                 className="w-full flex justify-center"
               >
                 <Tab key="details" title="Detalles">
@@ -711,19 +665,14 @@ export default function Drawer_Worker({
                                 {novedad.Fotografia && (
                                   <div className="flex flex-col w-full justify-center items-center space-x-2">
                                     <Divider />
-                                    <Image
-                                      src={`${URL}/${novedad.Fotografia}`}
+                                    <AuthenticatedImage
+                                      filePath={novedad.Fotografia}
                                       isZoomed
                                       alt="Fotografía de la ATE"
                                       width={300}
                                       height={300}
                                       className=" mt-4 shadow-lg border border-gray-200 mb-4"
-                                      onClick={() =>
-                                        downloadFile(
-                                          `${URL}/${novedad.Fotografia}`,
-                                          "FotografiaATE"
-                                        )
-                                      }
+                                      downloadName="FotografiaATE"
                                     />
                                   </div>
                                 )}
@@ -739,22 +688,25 @@ export default function Drawer_Worker({
                   {worker.documentos.map((doc) => (
                     <div key={doc._id} className="mb-4 shadow-xl rounded-lg">
                       <div className="w-full rounded-t-lg bg-[#fdedd3] justify-between flex items-center p-2">
-                        <Link
-                          href={`${URL}${doc.url}?access_token=${encodeURIComponent(
-                            token || ""
-                          )}`}
-                          showAnchorIcon
-                          isExternal
-                          anchorIcon={
-                            <ExternalLink size={20} color="#3b82f6" />
-                          }
+                        <Button
+                          variant="light"
                           className="flex flex-row items-center justify-center gap-2"
+                          onPress={() =>
+                            downloadAuthenticatedFile(
+                              authenticatedFetch,
+                              doc.url,
+                              doc.tipo?.value || "documento"
+                            ).catch((error) =>
+                              console.error("Error al descargar el documento:", error)
+                            )
+                          }
                         >
+                          <ExternalLink size={20} color="#3b82f6" />
                           <h3 className="text-black text-lg font-semibold">
                             {/* */}
                             {doc.tipo?.value || "Tipo no disponible"}
                           </h3>
-                        </Link>
+                        </Button>
                         <div className="flex flex-row gap-2 justify-center items-center">
                           <Chip variant="solid" color="warning">
                             <p className="font-semibold">

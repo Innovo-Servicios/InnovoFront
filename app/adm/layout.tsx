@@ -10,6 +10,8 @@ import {
   LogOut,
   UserRoundSearch,
   MessageSquare,
+  ClipboardList,
+  ShieldCheck,
 } from "lucide-react";
 import { Tooltip } from "@heroui/tooltip";
 import Link from "next/link";
@@ -23,10 +25,12 @@ export default function AdminLayout({
 }
 const navItems = [
   { href: "/adm", icon: LayoutDashboard, label: "Panel de administración" },
+  { href: "/adm/asignaciones", icon: ClipboardList, label: "Asignaciones" },
   { href: "/adm/workers", icon: Users, label: "Trabajadores" },
   { href: "/adm/followup", icon: UserRoundSearch, label: "Seguimiento" },
   { href: "/adm/notification", icon: BellPlus, label: "Notificaciones" },
   { href: "/adm/novedades", icon: MessageSquare, label: "Novedades" },
+  { href: "/adm/verificaciones", icon: ShieldCheck, label: "Validaciones terreno" },
   { href: "/adm/rutas", icon: Map, label: "Rutas" },
   { href: "/adm/direcciones", icon: MapPinned, label: "Direcciones" },
 ];

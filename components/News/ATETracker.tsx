@@ -18,7 +18,6 @@ import {
   SelectItem,
   Select,
   DatePicker,
-  Image,
   DateRangePicker,
 } from "@heroui/react";
 import {
@@ -43,11 +42,14 @@ import { parseDate, CalendarDate } from "@internationalized/date";
 import { I18nProvider } from "@react-aria/i18n";
 import { URL } from "@/config/config";
 import { useAuth } from "@/app/AuthContext";
+import AuthenticatedImage from "@/components/common/AuthenticatedImage";
 
 
 interface ATE {
   id: string;
   comentario: string;
+  respuestaComentario?: string | null;
+  Lecturacorrecta?: number | null;
   foto: string;
   tipo: { _id: string; nombre: string };
   direccion: { _id: string; nombre: string };
@@ -67,6 +69,19 @@ type QuickDateFilter = "today" | "last7" | "month" | "custom";
 const toCalendarDate = (date: Date) => {
   return parseDate(date.toISOString().split("T")[0]);
 };
+
+const normalizeAteType = (value?: string | null) =>
+  String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+
+const isAteLecturaType = (value?: string | null) =>
+  normalizeAteType(value) === normalizeAteType("Atención Especial-Lectura");
+
+const formatLecturaCorrecta = (lectura?: number | null) =>
+  lectura === null || lectura === undefined ? "Sin lectura" : lectura.toString();
 
 const getTodayRange = (): DateRangeValue => {
   const today = new Date();
@@ -92,15 +107,15 @@ const getLastSevenDaysRange = (): DateRangeValue => {
 const getCurrentMonthRange = (): DateRangeValue => {
   const today = new Date();
   const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-
+  const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
   return {
     start: toCalendarDate(firstDayOfMonth),
-    end: toCalendarDate(today),
+    end: toCalendarDate(lastDayOfMonth),
   };
 };
 
 export default function ATETracker() {
-  const { socket, token } = useAuth();
+  const { socket, token, authenticatedFetch } = useAuth();
 
   const [ates, setAtes] = useState<ATE[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -128,11 +143,46 @@ export default function ATETracker() {
     parseDate(new Date().toISOString().split("T")[0])
   );
 
+  const [trabajadores, setTrabajadores] = useState<{ _id: string; Nombre: string }[]>([]);
+  const [assigningAte, setAssigningAte] = useState<string | null>(null);
+  const [selectedTrabajador, setSelectedTrabajador] = useState<string>("");
+
+  const fetchTrabajadores = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await authenticatedFetch(`${URL}/trabajador/listarTrabajadores`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      const data = await res.json();
+      setTrabajadores(Array.isArray(data) ? data : []);
+    } catch {
+      setTrabajadores([]);
+    }
+  }, [authenticatedFetch, token]);
+
+  useEffect(() => {
+    fetchTrabajadores();
+  }, [fetchTrabajadores]);
+
+  const handleAsignarTrabajador = async (id_ate: string) => {
+    if (!selectedTrabajador) return;
+    await authenticatedFetch(`${URL}/middleware/editarATE`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, id_ate, Trabajador: selectedTrabajador }),
+    });
+    setAssigningAte(null);
+    setSelectedTrabajador("");
+    fetchATEs();
+  };
+
   const fetchATEs = useCallback(async () => {
     if (!token) return;
 
     try {
-      const response = await fetch(`${URL}/middleware/obtenerATE_Adm`, {
+      const response = await authenticatedFetch(`${URL}/middleware/obtenerATE_Adm`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -157,7 +207,7 @@ export default function ATETracker() {
       console.error("Error al obtener ATEs:", error);
       setAtes([]);
     }
-  }, [token]);
+  }, [authenticatedFetch, token]);
 
   useEffect(() => {
     fetchATEs();
@@ -186,7 +236,7 @@ export default function ATETracker() {
         fin: value.end.toString(),
       };
 
-      const response = await fetch(`${URL}/middleware/obtenerATE_Adm`, {
+      const response = await authenticatedFetch(`${URL}/middleware/obtenerATE_Adm`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -246,7 +296,7 @@ export default function ATETracker() {
     return ates.filter((ate) => {
       return (
         ate.tipo.nombre.toLowerCase().includes(query) ||
-        ate.Trabajador.nombre.toLowerCase().includes(query) ||
+        (ate.Trabajador?.nombre ?? "").toLowerCase().includes(query) ||
         ate.direccion.nombre.toLowerCase().includes(query) ||
         ate.fecha_ate.toLowerCase().includes(query) ||
         (ate.comentario || "").toLowerCase().includes(query)
@@ -301,7 +351,7 @@ export default function ATETracker() {
     const workerPendingStats = filteredAtes.reduce((acc, ate) => {
       if (ate.estado) return acc;
 
-      const workerName = ate.Trabajador.nombre;
+      const workerName = ate.Trabajador?.nombre ?? "Sin asignar";
 
       acc[workerName] = (acc[workerName] || 0) + 1;
 
@@ -324,13 +374,21 @@ export default function ATETracker() {
       return;
     }
 
+    if (!token) {
+      alert("Sesión expirada. Inicie sesión nuevamente.");
+      return;
+    }
+
+    const authHeaders = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    };
+
     try {
       if (selectedType === "ate") {
-        const response = await fetch(`${URL}/excel/ate`, {
+        const response = await authenticatedFetch(`${URL}/excel/ate`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: authHeaders,
           body: JSON.stringify({
             fecha: selectedDate.toString(),
           }),
@@ -353,11 +411,9 @@ export default function ATETracker() {
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
       } else {
-        const response = await fetch(`${URL}/excel/novedad`, {
+        const response = await authenticatedFetch(`${URL}/excel/novedad`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: authHeaders,
           body: JSON.stringify({
             fechainicio: dateRange.start.toString(),
             fechafin: dateRange.end.toString(),
@@ -387,13 +443,19 @@ export default function ATETracker() {
   };
 
   const sendNovedad = async () => {
+    if (!token) {
+      alert("Sesión expirada. Inicie sesión nuevamente.");
+      return;
+    }
+
     try {
-      const response = await fetch(`${URL}/novedad/correo`, {
+      const response = await authenticatedFetch(`${URL}/novedad/correo`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          token,
           fecha: selectedSendDate.toString(),
         }),
       });
@@ -409,13 +471,19 @@ export default function ATETracker() {
   };
 
   const sendVerificacion = async () => {
+    if (!token) {
+      alert("Sesión expirada. Inicie sesión nuevamente.");
+      return;
+    }
+
     try {
-      const response = await fetch(`${URL}/novedad/verificacion`, {
+      const response = await authenticatedFetch(`${URL}/novedad/verificacion`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          token,
           fecha: selectedSendDate.toString(),
         }),
       });
@@ -440,37 +508,6 @@ export default function ATETracker() {
       sendNovedad();
     } else {
       sendVerificacion();
-    }
-  };
-
-  const downloadFile = (fileUri: string, fileName: string) => {
-    try {
-      const parsedUri = new window.URL(fileUri, window.location.origin);
-      const allowedBase = new window.URL(URL, window.location.origin);
-      const allowedPath =
-        allowedBase.pathname === "/" ? "/" : allowedBase.pathname;
-
-      if (!["http:", "https:"].includes(parsedUri.protocol)) {
-        throw new Error("Protocolo de archivo no permitido");
-      }
-
-      if (parsedUri.origin !== allowedBase.origin) {
-        throw new Error("Origen de archivo no permitido para evitar SSRF");
-      }
-
-      if (allowedPath !== "/" && !parsedUri.pathname.startsWith(allowedPath)) {
-        throw new Error("Ruta de archivo no permitida");
-      }
-
-      const link = document.createElement("a");
-      link.href = parsedUri.toString();
-      link.setAttribute("download", fileName);
-      link.rel = "noopener noreferrer";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (error) {
-      console.error("Error al descargar el archivo:", error);
     }
   };
 
@@ -851,32 +888,44 @@ export default function ATETracker() {
                       key={ate.id}
                       id="ate"
                       aria-label="ATE"
+                      classNames={{
+                        trigger: "w-full min-w-0",
+                        titleWrapper: "w-full min-w-0",
+                        title: "w-full min-w-0",
+                      }}
                       title={
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex min-w-0 items-center gap-3">
+                        <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_6rem] items-center gap-3">
+                          <div className="flex min-w-0 flex-1 items-center gap-3">
                             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
                               {getATETypeIcon(ate.tipo.nombre)}
                             </div>
 
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2">
+                            <div className="min-w-0 flex-1 overflow-hidden">
+                              <div className="flex min-w-0 items-center gap-2">
                                 <span className="truncate font-semibold text-slate-900">
                                   {getShortATEType(ate.tipo.nombre)}
                                 </span>
 
-                                <Chip size="sm" color="default" variant="flat">
+                                <Chip
+                                  className="shrink-0"
+                                  size="sm"
+                                  color="default"
+                                  variant="flat"
+                                >
                                   {ate.fecha_ate.split("T")[0]}
                                 </Chip>
                               </div>
 
                               <p className="truncate text-xs text-slate-500">
-                                {ate.Trabajador.nombre} · {ate.direccion.nombre}
+                                {ate.Trabajador?.nombre ?? "Sin asignar"} · {ate.direccion.nombre}
                               </p>
                             </div>
                           </div>
 
                           <Chip
+                            className="w-24 shrink-0 justify-center"
                             color={ate.estado ? "success" : "warning"}
+                            size="sm"
                             variant="flat"
                           >
                             {ate.estado ? "Completado" : "Pendiente"}
@@ -892,8 +941,36 @@ export default function ATETracker() {
 
                         <div className="flex items-start gap-2 text-sm text-slate-600">
                           <UserIcon size={18} />
-                          <span>{ate.Trabajador.nombre}</span>
+                          <span>{ate.Trabajador?.nombre ?? "Sin asignar"}</span>
                         </div>
+
+                        {!ate.Trabajador && (
+                          <div className="flex items-center gap-2">
+                            <Select
+                              size="sm"
+                              placeholder="Seleccionar trabajador"
+                              selectedKeys={assigningAte === ate.id ? [selectedTrabajador] : []}
+                              onChange={(e) => {
+                                setAssigningAte(ate.id);
+                                setSelectedTrabajador(e.target.value);
+                              }}
+                              variant="bordered"
+                              className="flex-1"
+                            >
+                              {trabajadores.map((t) => (
+                                <SelectItem key={t._id}>{t.Nombre}</SelectItem>
+                              ))}
+                            </Select>
+                            <Button
+                              size="sm"
+                              color="primary"
+                              isDisabled={assigningAte !== ate.id || !selectedTrabajador}
+                              onPress={() => handleAsignarTrabajador(ate.id)}
+                            >
+                              Asignar
+                            </Button>
+                          </div>
+                        )}
 
                         <div className="flex items-start gap-2 text-sm text-slate-600">
                           <MapPinIcon size={18} />
@@ -910,23 +987,38 @@ export default function ATETracker() {
                           </div>
                         )}
 
+                        {ate.respuestaComentario && (
+                          <div className="flex items-start gap-2 text-sm text-slate-600">
+                            <MessageSquareMore
+                              size={18}
+                              className="mt-1 flex-shrink-0"
+                            />
+                            <span>{ate.respuestaComentario}</span>
+                          </div>
+                        )}
+
+                        {isAteLecturaType(ate.tipo?.nombre) && ate.estado && (
+                          <div className="flex items-start gap-2 text-sm text-slate-600">
+                            <BookOpenIcon
+                              size={18}
+                              className="mt-1 flex-shrink-0"
+                            />
+                            <span>Lectura correcta: {formatLecturaCorrecta(ate.Lecturacorrecta)}</span>
+                          </div>
+                        )}
+
                         {ate.fotografia && (
                           <div className="flex flex-col items-center justify-center gap-2 text-sm text-slate-500">
                             <Divider />
 
-                            <Image
-                              src={`${URL}/${ate.fotografia}`}
+                            <AuthenticatedImage
+                              filePath={ate.fotografia}
                               isZoomed
                               alt="Fotografía de la ATE"
                               width={300}
                               height={300}
                               className="mt-4 mb-4 border border-slate-200 shadow-lg"
-                              onClick={() =>
-                                downloadFile(
-                                  `${URL}/${ate.fotografia}`,
-                                  "FotografiaATE"
-                                )
-                              }
+                              downloadName="FotografiaATE"
                             />
                           </div>
                         )}

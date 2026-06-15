@@ -1,5 +1,12 @@
 "use client";
-import React, { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
 import { URL } from "@/config/config";
 import { io, Socket } from "socket.io-client";
@@ -10,6 +17,7 @@ interface AuthContextType {
   socket: Socket | null;
   authReady: boolean;
   refreshSession: () => Promise<string | null>;
+  authenticatedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   logout: () => Promise<void>;
 }
 
@@ -21,7 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authReady, setAuthReady] = useState(false);
   const router = useRouter();
 
-  const refreshSession = async () => {
+  const refreshSession = useCallback(async () => {
     try {
       const response = await fetch(`${URL}/token/refresh`, {
         method: "POST",
@@ -41,9 +49,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setToken(null);
       return null;
     }
-  };
+  }, []);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       await fetch(`${URL}/token/logout`, {
         method: "POST",
@@ -64,7 +72,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setToken(null);
       router.push("/");
     }
-  };
+  }, [router, socket, token]);
+
+  const authenticatedFetch = useCallback(
+    async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const buildRequestInit = (accessToken: string | null): RequestInit => {
+        const headers = new Headers(init.headers);
+
+        if (accessToken) {
+          headers.set("Authorization", `Bearer ${accessToken}`);
+        }
+
+        return {
+          ...init,
+          headers,
+          credentials: "include",
+        };
+      };
+
+      const activeToken = token || (await refreshSession());
+      const response = await fetch(input, buildRequestInit(activeToken));
+
+      if (response.status !== 401) {
+        return response;
+      }
+
+      const refreshedToken = await refreshSession();
+      if (!refreshedToken) {
+        await logout();
+        return response;
+      }
+
+      return fetch(input, buildRequestInit(refreshedToken));
+    },
+    [logout, refreshSession, token]
+  );
 
   useEffect(() => {
     let active = true;
@@ -78,7 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false;
     };
-  }, []);
+  }, [refreshSession]);
 
   useEffect(() => {
     if (!token) {
@@ -119,7 +161,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [token]);
 
   return (
-    <AuthContext.Provider value={{ token, setToken, socket, authReady, refreshSession, logout }}>
+    <AuthContext.Provider value={{ token, setToken, socket, authReady, refreshSession, authenticatedFetch, logout }}>
       {children}
     </AuthContext.Provider>
   );

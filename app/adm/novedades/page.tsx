@@ -75,15 +75,15 @@ const getLastSevenDaysRange = (): DateRangeValue => {
 const getCurrentMonthRange = (): DateRangeValue => {
   const today = new Date();
   const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-
+  const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
   return {
     start: toCalendarDate(firstDayOfMonth),
-    end: toCalendarDate(today),
+    end: toCalendarDate(lastDayOfMonth),
   };
 };
 
 export default function Admin_Novedades() {
-  const { token, socket } = useAuth();
+  const { token, socket, authenticatedFetch } = useAuth();
 
   const [novedades, setNovedades] = useState<Novedad[]>([]);
   const [tipoNovedades, setTipoNovedades] = useState<TipoNovedad[]>([]);
@@ -107,7 +107,7 @@ export default function Admin_Novedades() {
         fin: dateRange.end.toString(),
       };
 
-      const response = await fetch(`${URL}/novedad/UltimasNovedadesDia`, {
+      const response = await authenticatedFetch(`${URL}/novedad/UltimasNovedadesDia`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -122,13 +122,13 @@ export default function Admin_Novedades() {
       console.error("Error fetching novedades:", error);
       setNovedades([]);
     }
-  }, [token, dateRange.start, dateRange.end]);
+  }, [authenticatedFetch, token, dateRange.start, dateRange.end]);
 
   const fetchType = useCallback(async () => {
     if (!token) return;
 
     try {
-      const response = await fetch(`${URL}/tiponovedad/obtenerTipoNovedad`, {
+      const response = await authenticatedFetch(`${URL}/tiponovedad/obtenerTipoNovedad`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -155,7 +155,7 @@ export default function Admin_Novedades() {
       console.error("Error fetching tipos de novedades:", error);
       setTipoNovedades([{ _id: "all", value: "Todos" }]);
     }
-  }, [token]);
+  }, [authenticatedFetch, token]);
 
   useEffect(() => {
     setDateRange(getTodayRange());

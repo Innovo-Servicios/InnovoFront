@@ -10,6 +10,7 @@ interface CustomMarkerProps {
   label: string;
   draggable?: boolean;
   onDragEnd?: (id: number, lat: number, lng: number) => void;
+  children?: React.ReactNode;
 }
 
 const CustomMarker: React.FC<CustomMarkerProps> = ({
@@ -19,6 +20,7 @@ const CustomMarker: React.FC<CustomMarkerProps> = ({
   label,
   draggable = false,
   onDragEnd,
+  children,
 }) => {
   const handleDragEnd = (e: { target: { getLatLng: () => LatLng } }) => {
     if (onDragEnd) {
@@ -34,7 +36,7 @@ const CustomMarker: React.FC<CustomMarkerProps> = ({
       draggable={draggable}
       eventHandlers={{ dragend: handleDragEnd }}
     >
-      <PopupWithNoSSR>{label}</PopupWithNoSSR>
+      <PopupWithNoSSR>{children ?? label}</PopupWithNoSSR>
     </MarkerWithNoSSR>
   );
 };

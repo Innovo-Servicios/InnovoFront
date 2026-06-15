@@ -28,7 +28,7 @@ interface Rutas {
 export default function Tab_Sectores() {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedSector, setSelectedSector] = useState<number | null>(null);
-  const { token } = useAuth();
+  const { token, authenticatedFetch } = useAuth();
   const { setRuta } = useRuta();
   const list = useAsyncList<Rutas>({
     async load({ signal }) {
@@ -38,7 +38,7 @@ export default function Tab_Sectores() {
       }
 
       setIsLoading(true);
-      const res = await fetch(`${URL}/sector/tablaSectores`, {
+      const res = await authenticatedFetch(`${URL}/sector/tablaSectores`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -68,7 +68,7 @@ export default function Tab_Sectores() {
       token,
       NumeroSector: sectorId,
     };
-    const res = await fetch(`${URL}/sector/obtenerDatosSectores`, {
+    const res = await authenticatedFetch(`${URL}/sector/obtenerDatosSectores`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
