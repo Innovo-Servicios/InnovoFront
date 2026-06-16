@@ -28,6 +28,7 @@ import {
 import {
   getAssignmentCreatorCatalog,
   getAssignmentCreatorTemplate,
+  getChileanHolidays,
   previewAssignmentCreator,
   saveAssignmentCreatorTemplate,
 } from "@/api/adm/api";
@@ -151,6 +152,13 @@ interface AssignmentPreview {
   }>;
 }
 
+interface ChileanHoliday {
+  date: string;
+  title?: string;
+  type?: string;
+  inalienable?: boolean;
+}
+
 const ASSIGNMENT_TYPES: AssignmentType[] = ["lectura", "reparto"];
 
 const emptyTemplate = (): CreatorTemplate => ({
@@ -164,20 +172,6 @@ const emptyTemplate = (): CreatorTemplate => ({
   leftoverWorkers: [],
   restrictions: [],
 });
-
-/*
-  IMPORTANTE:
-  Aquí debes conectar los feriados reales.
-  Lo ideal: traerlos desde backend.
-  Mientras no tengas endpoint, puedes agregarlos aquí por año.
-*/
-const HOLIDAYS_BY_YEAR: Record<string, string[]> = {
-  "2026": [
-    // "2026-01-01",
-    // "2026-04-03",
-    // "2026-05-01",
-  ],
-};
 
 const nextMonthValue = () => {
   const today = new Date();
@@ -244,7 +238,14 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
   const [, setConflictChoices] = useState<Record<string, ConflictChoice>>({});
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [holidayErrorMessage, setHolidayErrorMessage] = useState<string | null>(
+    null
+  );
+  const [holidaysByYear, setHolidaysByYear] = useState<Record<string, string[]>>(
+    {}
+  );
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
+  const [isLoadingHolidays, setIsLoadingHolidays] = useState(false);
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
 
@@ -253,11 +254,23 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
     [monthValue]
   );
 
-  const holidayDates = useMemo(() => {
-    const year = monthValue.split("-")[0];
-
-    return HOLIDAYS_BY_YEAR[year] || [];
+  const selectedYear = useMemo(() => {
+    return Number(monthValue.split("-")[0]);
   }, [monthValue]);
+
+  const selectedYearKey = String(selectedYear);
+
+  const hasHolidayData = useMemo(
+    () => Object.prototype.hasOwnProperty.call(holidaysByYear, selectedYearKey),
+    [holidaysByYear, selectedYearKey]
+  );
+
+  const holidayDates = useMemo(() => {
+    return holidaysByYear[selectedYearKey] || [];
+  }, [holidaysByYear, selectedYearKey]);
+
+  const hasHolidayLoadBlocker =
+    isLoadingHolidays || Boolean(holidayErrorMessage) || !hasHolidayData;
 
   const calendarConfig = useMemo<CalendarRuleConfig>(
     () => ({
@@ -385,6 +398,72 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
     },
     [authenticatedFetch, token]
   );
+
+  useEffect(() => {
+    if (!token || !Number.isInteger(selectedYear)) return;
+
+    if (hasHolidayData) {
+      setHolidayErrorMessage(null);
+      return;
+    }
+
+    let isActive = true;
+
+    const loadHolidays = async () => {
+      setIsLoadingHolidays(true);
+      setHolidayErrorMessage(null);
+
+      try {
+        const response = await getChileanHolidays(
+          token,
+          selectedYear,
+          authenticatedFetch
+        );
+        const data = await parseJsonResponse(
+          response,
+          "No se pudieron cargar los feriados chilenos."
+        );
+        const holidays = Array.isArray(data?.holidays)
+          ? (data.holidays as ChileanHoliday[])
+          : [];
+        const holidayDatesForYear = holidays
+          .map((holiday) => holiday.date)
+          .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date))
+          .sort();
+
+        if (!holidayDatesForYear.length) {
+          throw new Error(
+            `No se encontraron feriados chilenos para ${selectedYear}.`
+          );
+        }
+
+        if (!isActive) return;
+
+        setHolidaysByYear((current) => ({
+          ...current,
+          [String(selectedYear)]: holidayDatesForYear,
+        }));
+      } catch (error) {
+        if (!isActive) return;
+
+        setHolidayErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "No se pudieron cargar los feriados chilenos."
+        );
+      } finally {
+        if (isActive) {
+          setIsLoadingHolidays(false);
+        }
+      }
+    };
+
+    loadHolidays();
+
+    return () => {
+      isActive = false;
+    };
+  }, [authenticatedFetch, hasHolidayData, selectedYear, token]);
 
   useEffect(() => {
     loadCatalog();
@@ -547,21 +626,37 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
     field: AssignmentStep,
     value: string
   ) => {
-    const normalizedDay = normalizeDayInput(value, monthTotalDays);
+    const cleanValue = value.replace(/\D/g, "").slice(0, 2);
 
-    if (!normalizedDay && value.trim() !== "") {
+    if (!cleanValue) {
+      updateScheduleField(routeId, field, "");
+      return;
+    }
+
+    const normalizedDay = normalizeDayInput(cleanValue, monthTotalDays);
+
+    if (!normalizedDay) {
       setErrorMessage(
         `El día debe estar entre 01 y ${String(monthTotalDays).padStart(
           2,
           "0"
         )}.`
       );
+      return;
     }
 
     updateScheduleField(routeId, field, normalizedDay);
   };
 
   const generateProposal = () => {
+    if (hasHolidayLoadBlocker) {
+      setErrorMessage(
+        holidayErrorMessage ||
+          "Espera a que se carguen los feriados chilenos antes de generar propuesta."
+      );
+      return;
+    }
+
     if (catalog.rutas.length === 0) {
       setErrorMessage("No hay rutas disponibles para generar propuesta.");
       return;
@@ -620,6 +715,14 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
 
   const generatePreview = async () => {
     if (!token || !empresa) return;
+
+    if (hasHolidayLoadBlocker) {
+      setErrorMessage(
+        holidayErrorMessage ||
+          "Espera a que se carguen los feriados chilenos antes de previsualizar."
+      );
+      return;
+    }
 
     if (isPastMonth) {
       setErrorMessage(
@@ -760,6 +863,23 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
             </div>
           </div>
 
+          {isLoadingHolidays ? (
+            <Card className="shrink-0 border border-blue-100 bg-blue-50">
+              <CardBody className="flex items-center gap-3 text-sm text-blue-700">
+                <Spinner size="sm" />
+                Cargando feriados chilenos para {selectedYear}.
+              </CardBody>
+            </Card>
+          ) : null}
+
+          {holidayErrorMessage ? (
+            <Card className="shrink-0 border border-danger-200 bg-danger-50">
+              <CardBody className="text-sm text-danger-700">
+                {holidayErrorMessage}
+              </CardBody>
+            </Card>
+          ) : null}
+
           {statusMessage ? (
             <Card className="shrink-0 border border-success-200 bg-success-50">
               <CardBody className="text-sm text-success-700">
@@ -792,6 +912,7 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
                     size="sm"
                     variant="flat"
                     startContent={<Wand2 size={16} />}
+                    isDisabled={hasHolidayLoadBlocker}
                     onPress={generateProposal}
                   >
                     Generar propuesta
@@ -807,7 +928,7 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
                     Limpiar calendario
                   </Button>
 
-                  {isLoadingCatalog ? (
+                  {isLoadingCatalog || isLoadingHolidays ? (
                     <Spinner size="sm" />
                   ) : (
                     <CalendarDays size={18} />
@@ -878,9 +999,6 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
                             label="lectura"
                             dateValue={schedule.lectura}
                             colorClass="border-purple-200 bg-purple-50/40 data-[hover=true]:border-purple-300"
-                            onChange={(value) =>
-                              updateScheduleField(route.id, "lectura", value)
-                            }
                             onBlur={(value) =>
                               handleScheduleBlur(route.id, "lectura", value)
                             }
@@ -891,13 +1009,6 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
                             label="adelanto verificación"
                             dateValue={schedule.adelantoVerificacion}
                             colorClass="border-amber-200 bg-amber-50/40 data-[hover=true]:border-amber-300"
-                            onChange={(value) =>
-                              updateScheduleField(
-                                route.id,
-                                "adelantoVerificacion",
-                                value
-                              )
-                            }
                             onBlur={(value) =>
                               handleScheduleBlur(
                                 route.id,
@@ -913,7 +1024,6 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
                             dateValue={schedule.verificacion}
                             colorClass="border-orange-200 bg-orange-50/40 opacity-90"
                             isReadOnly
-                            onChange={() => {}}
                             onBlur={() => {}}
                           />
 
@@ -922,9 +1032,6 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
                             label="reparto"
                             dateValue={schedule.reparto}
                             colorClass="border-emerald-200 bg-emerald-50/40 data-[hover=true]:border-emerald-300"
-                            onChange={(value) =>
-                              updateScheduleField(route.id, "reparto", value)
-                            }
                             onBlur={(value) =>
                               handleScheduleBlur(route.id, "reparto", value)
                             }
@@ -1041,6 +1148,7 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
                 !empresa ||
                 isPreviewing ||
                 isPastMonth ||
+                hasHolidayLoadBlocker ||
                 !hasEveryRouteDates ||
                 hasScheduleErrors
               }
@@ -1075,7 +1183,6 @@ function ScheduleInput({
   dateValue,
   colorClass,
   isReadOnly = false,
-  onChange,
   onBlur,
 }: {
   routeNumero: number | null;
@@ -1083,11 +1190,18 @@ function ScheduleInput({
   dateValue: string;
   colorClass: string;
   isReadOnly?: boolean;
-  onChange: (value: string) => void;
   onBlur: (value: string) => void;
 }) {
   const dayValue = getDayFromDate(dateValue);
   const weekday = getWeekdayLabel(dateValue);
+  const [draftValue, setDraftValue] = useState(dayValue);
+  const [isEditing, setIsEditing] = useState(false);
+
+  useEffect(() => {
+    if (!isEditing) {
+      setDraftValue(dayValue);
+    }
+  }, [dayValue, isEditing]);
 
   return (
     <td className="px-4 py-3">
@@ -1100,7 +1214,7 @@ function ScheduleInput({
           aria-label={`${label} ruta ${routeNumero ?? "N/A"}`}
           placeholder=""
           size="sm"
-          value={dayValue}
+          value={isEditing ? draftValue : dayValue}
           maxLength={2}
           inputMode="numeric"
           pattern="[0-9]*"
@@ -1112,14 +1226,27 @@ function ScheduleInput({
             }`,
             input: "text-center font-semibold text-slate-800",
           }}
+          onFocus={(event) => {
+            if (isReadOnly) return;
+
+            setIsEditing(true);
+            setDraftValue(dayValue);
+            event.currentTarget.select();
+          }}
           onValueChange={(nextValue) => {
             if (isReadOnly) return;
 
-            onChange(nextValue);
+            setDraftValue(nextValue.replace(/\D/g, "").slice(0, 2));
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.currentTarget.blur();
+            }
           }}
           onBlur={(event) => {
             if (isReadOnly) return;
 
+            setIsEditing(false);
             onBlur(event.target.value);
           }}
         />

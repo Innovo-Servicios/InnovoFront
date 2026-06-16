@@ -78,6 +78,21 @@ export const getVistaAsignaciones = async (
   return res;
 };
 
+export const getChileanHolidays = async (
+  token: string,
+  year: number,
+  fetcher: Fetcher = fetch
+) => {
+  const res = await fetcher(`${URL}/asignacion/feriados/${year}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  return res;
+};
+
 export const getAssignmentCreatorCatalog = async (
   token: string,
   empresa?: string,
