@@ -47,6 +47,7 @@ interface CatalogWorker {
   nombre: string;
   rut: string;
   cargo: string;
+  empresa: string[];
 }
 
 interface FixedAssignmentRule {
