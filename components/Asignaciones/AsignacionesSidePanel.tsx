@@ -7,23 +7,26 @@ import {
   CardBody,
   CardHeader,
   Chip,
-  Divider,
   Select,
   SelectItem,
   Spinner,
 } from "@heroui/react";
 import {
   CheckCircle2,
-  Download,
   FileSpreadsheet,
   FileText,
   History,
   Inbox,
   RefreshCw,
+  UserRoundCog,
 } from "lucide-react";
 
 import { getVistaAsignaciones } from "@/api/adm/api";
 import { useAuth } from "@/app/AuthContext";
+import ModificacionPuntualModal, {
+  PuntualModificationRule,
+} from "@/components/Asignaciones/ModificacionPuntualModal";
+import HistorialAsignacionModal from "@/components/Asignaciones/HistorialAsignacionModal";
 
 type AssignmentType = "lectura" | "reparto";
 
@@ -124,49 +127,55 @@ export default function AsignacionesViewerPanel() {
   const { token, authenticatedFetch } = useAuth();
 
   const [empresa, setEmpresa] = useState("GasValpo");
-  const [monthValue, setMonthValue] = useState(nextMonthValue);
+  const [monthValue, setMonthValue] = useState(currentMonthValue);
   const [assignments, setAssignments] = useState<ExistingAssignmentView[]>([]);
+  const [modifications, setModifications] = useState<PuntualModificationRule[]>(
+    []
+  );
+
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isModificationOpen, setIsModificationOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   const availableCompanies = ["GasValpo", "Comercial"];
 
-  const stats = useMemo(() => {
-    const uniqueRoutes = new Set(
-      assignments
-        .map((assignment) => assignment.sector.ruta)
-        .filter((route) => route !== null && route !== undefined)
-    );
-
-    const uniqueWorkers = new Set(
-      assignments
-        .map((assignment) => assignment.trabajador?.id)
-        .filter(Boolean)
-    );
-
-    const uniqueSectors = new Set(
-      assignments
-        .map((assignment) => assignment.sector?.id)
-        .filter(Boolean)
-    );
-
-    const lectura = assignments.filter(
-      (assignment) => assignment.tipo === "lectura"
+  const operationalStats = useMemo(() => {
+    const apoyos = modifications.filter(
+      (modification) => modification.tipo === "apoyo"
     ).length;
 
-    const reparto = assignments.filter(
-      (assignment) => assignment.tipo === "reparto"
+    const reemplazos = modifications.filter(
+      (modification) => modification.tipo === "reemplazo"
     ).length;
+
+    const accidentes = modifications.filter(
+      (modification) => modification.tipo === "accidente"
+    ).length;
+
+    const emergencias = modifications.filter(
+      (modification) => modification.tipo === "emergencia"
+    ).length;
+
+    const otros = modifications.filter(
+      (modification) => modification.tipo === "otro"
+    ).length;
+
+    const affectedSectors = new Set(
+      modifications.map((modification) => modification.sectorId)
+    );
 
     return {
-      total: assignments.length,
-      routes: uniqueRoutes.size,
-      workers: uniqueWorkers.size,
-      sectors: uniqueSectors.size,
-      lectura,
-      reparto,
+      hasAssignment: assignments.length > 0,
+      apoyos,
+      reemplazos,
+      accidentes,
+      emergencias,
+      otros,
+      totalModifications: modifications.length,
+      affectedSectors: affectedSectors.size,
     };
-  }, [assignments]);
+  }, [assignments.length, modifications]);
 
   const loadAssignments = useCallback(async () => {
     if (!token || !empresa || !monthValue) return;
@@ -221,20 +230,37 @@ export default function AsignacionesViewerPanel() {
       "Tipo",
       "Ruta",
       "Sector",
-      "Trabajador",
+      "Trabajador original",
       "RUT",
       "Empresa",
+      "Modificacion",
+      "Trabajador apoyo/reemplazo",
+      "Motivo",
     ];
 
-    const rows = assignments.map((assignment) => [
-      assignment.fecha_asignacion,
-      assignment.tipo,
-      assignment.sector.ruta ?? "",
-      assignment.sector.nombre ?? "",
-      assignment.trabajador.nombre ?? "",
-      assignment.trabajador.rut ?? "",
-      assignment.sector.empresa ?? "",
-    ]);
+    const modificationByAssignmentId = new Map(
+      modifications.map((modification) => [
+        modification.assignmentId,
+        modification,
+      ])
+    );
+
+    const rows = assignments.map((assignment) => {
+      const modification = modificationByAssignmentId.get(assignment.id);
+
+      return [
+        assignment.fecha_asignacion,
+        assignment.tipo,
+        assignment.sector.ruta ?? "",
+        assignment.sector.nombre ?? "",
+        assignment.trabajador.nombre ?? "",
+        assignment.trabajador.rut ?? "",
+        assignment.sector.empresa ?? "",
+        modification?.tipo ?? "",
+        modification?.trabajadorNuevoNombre ?? "",
+        modification?.motivo ?? "",
+      ];
+    });
 
     const csv = [header, ...rows]
       .map((row) =>
@@ -246,14 +272,6 @@ export default function AsignacionesViewerPanel() {
       `asignaciones_${empresa}_${monthValue}.csv`,
       csv,
       "text/csv;charset=utf-8"
-    );
-  };
-
-  const downloadJSON = () => {
-    downloadBlob(
-      `asignaciones_${empresa}_${monthValue}.json`,
-      JSON.stringify(assignments, null, 2),
-      "application/json;charset=utf-8"
     );
   };
 
@@ -269,7 +287,7 @@ export default function AsignacionesViewerPanel() {
         </h1>
 
         <p className="mt-1 text-sm text-slate-500">
-          Consulta asignaciones guardadas para ver, descargar o revisar.
+          Consulta asignaciones guardadas, revisa ajustes y descarga reportes.
         </p>
       </div>
 
@@ -288,6 +306,7 @@ export default function AsignacionesViewerPanel() {
               onSelectionChange={(keys) => {
                 const selected = selectionToArray(keys)[0] || "";
                 setEmpresa(selected);
+                setModifications([]);
               }}
               variant="bordered"
             >
@@ -302,12 +321,13 @@ export default function AsignacionesViewerPanel() {
               onSelectionChange={(keys) => {
                 const selected = selectionToArray(keys)[0] || "";
                 setMonthValue(selected);
+                setModifications([]);
               }}
               variant="bordered"
             >
               {[
-                nextMonthValue(),
                 currentMonthValue(),
+                nextMonthValue(),
                 "2026-05",
                 "2026-04",
                 "2026-03",
@@ -386,17 +406,85 @@ export default function AsignacionesViewerPanel() {
         <Card shadow="none" className="border border-slate-200">
           <CardHeader className="border-b border-slate-200">
             <h2 className="text-base font-bold text-slate-900">
-              Resumen de la asignación
+              Gestión puntual
+            </h2>
+          </CardHeader>
+
+          <CardBody className="space-y-3">
+            <Button
+              className="w-full justify-start font-semibold"
+              variant="flat"
+              color={modifications.length > 0 ? "warning" : "default"}
+              startContent={<UserRoundCog size={18} />}
+              isDisabled={assignments.length === 0}
+              onPress={() => setIsModificationOpen(true)}
+            >
+              Agregar apoyo / reemplazo
+              {modifications.length > 0 ? ` (${modifications.length})` : ""}
+            </Button>
+
+            <Button
+              className="w-full justify-start font-semibold"
+              variant="flat"
+              startContent={<History size={18} />}
+              isDisabled={assignments.length === 0}
+              onPress={() => setIsHistoryOpen(true)}
+            >
+              Ver detalle de asignación
+            </Button>
+
+            <p className="text-xs text-slate-500">
+              Los apoyos, reemplazos y emergencias se registran sobre una
+              asignación existente. No regeneran el mes completo.
+            </p>
+          </CardBody>
+        </Card>
+
+        <Card shadow="none" className="border border-slate-200">
+          <CardHeader className="border-b border-slate-200">
+            <h2 className="text-base font-bold text-slate-900">
+              Estado operativo
             </h2>
           </CardHeader>
 
           <CardBody className="space-y-3 text-sm">
-            <SummaryRow label="Registros" value={stats.total} />
-            <SummaryRow label="Sectores asignados" value={stats.sectors} />
-            <SummaryRow label="Rutas" value={stats.routes} />
-            <SummaryRow label="Lectores involucrados" value={stats.workers} />
-            <SummaryRow label="Lecturas" value={stats.lectura} />
-            <SummaryRow label="Repartos" value={stats.reparto} />
+            <StatusRow
+              label="Asignación cargada"
+              value={operationalStats.hasAssignment ? "Sí" : "No"}
+              active={operationalStats.hasAssignment}
+            />
+
+            <StatusRow
+              label="Apoyos registrados"
+              value={operationalStats.apoyos}
+              active={operationalStats.apoyos > 0}
+            />
+
+            <StatusRow
+              label="Reemplazos registrados"
+              value={operationalStats.reemplazos}
+              active={operationalStats.reemplazos > 0}
+            />
+
+            <StatusRow
+              label="Accidentes / emergencias"
+              value={operationalStats.accidentes + operationalStats.emergencias}
+              active={
+                operationalStats.accidentes + operationalStats.emergencias > 0
+              }
+            />
+
+            <StatusRow
+              label="Sectores afectados"
+              value={operationalStats.affectedSectors}
+              active={operationalStats.affectedSectors > 0}
+            />
+
+            <StatusRow
+              label="Total modificaciones"
+              value={operationalStats.totalModifications}
+              active={operationalStats.totalModifications > 0}
+            />
           </CardBody>
         </Card>
 
@@ -427,16 +515,6 @@ export default function AsignacionesViewerPanel() {
             >
               Descargar CSV
             </Button>
-
-            <Button
-              className="w-full justify-start"
-              variant="flat"
-              startContent={<Download size={18} />}
-              isDisabled={assignments.length === 0}
-              onPress={downloadJSON}
-            >
-              Descargar JSON
-            </Button>
           </CardBody>
         </Card>
 
@@ -455,7 +533,12 @@ export default function AsignacionesViewerPanel() {
               <button
                 key={month}
                 type="button"
-                onClick={() => setMonthValue(month)}
+                onClick={() => {
+                  setMonthValue(month);
+                  setTimeout(() => {
+                    setIsHistoryOpen(true);
+                  }, 150);
+                }}
                 className="flex w-full items-center justify-between rounded-xl border border-slate-200 px-3 py-3 text-left hover:bg-slate-50"
               >
                 <div>
@@ -463,27 +546,61 @@ export default function AsignacionesViewerPanel() {
                     {monthLabel(month)}
                   </p>
                   <p className="text-xs text-slate-500">
-                    Revisar asignación generada
+                    Abrir detalle de asignación
                   </p>
                 </div>
 
                 <Chip size="sm" variant="flat" color="primary">
-                  Ver
+                  Abrir
                 </Chip>
               </button>
             ))}
           </CardBody>
         </Card>
       </div>
+
+      <ModificacionPuntualModal
+        isOpen={isModificationOpen}
+        onOpenChange={setIsModificationOpen}
+        empresa={empresa}
+        monthValue={monthValue}
+        assignments={assignments}
+        modifications={modifications}
+        onModificationsChange={setModifications}
+      />
+
+      <HistorialAsignacionModal
+        isOpen={isHistoryOpen}
+        onOpenChange={setIsHistoryOpen}
+        empresa={empresa}
+        monthLabel={monthLabel(monthValue)}
+        assignments={assignments}
+        modifications={modifications}
+      />
     </div>
   );
 }
 
-function SummaryRow({ label, value }: { label: string; value: number }) {
+function StatusRow({
+  label,
+  value,
+  active,
+}: {
+  label: string;
+  value: string | number;
+  active: boolean;
+}) {
   return (
     <div className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-b-0 last:pb-0">
       <span className="text-slate-500">{label}</span>
-      <span className="font-bold text-slate-900">{value}</span>
+
+      <Chip
+        size="sm"
+        variant="flat"
+        color={active ? "primary" : "default"}
+      >
+        {value}
+      </Chip>
     </div>
   );
 }

@@ -46,7 +46,12 @@ interface CatalogWorker {
   id: string;
   nombre: string;
   rut: string;
-  cargo: string;
+  cargo: "administracion" | "lector" | "supervisor" | "inspector" | string;
+
+  empresas_trabajador?: string[];
+  empresasTrabajador?: string[];
+  empresas?: string[];
+  empresa?: string;
 }
 
 interface FixedAssignmentRule {
@@ -144,6 +149,41 @@ const selectionToArray = (keys: unknown, allValues: string[] = []) => {
   return Array.from(keys as Iterable<unknown>).map(String);
 };
 
+const normalizeText = (value: unknown) => {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+};
+
+const getWorkerCompanies = (worker: CatalogWorker) => {
+  return [
+    ...(worker.empresas_trabajador || []),
+    ...(worker.empresasTrabajador || []),
+    ...(worker.empresas || []),
+    ...(worker.empresa ? [worker.empresa] : []),
+  ];
+};
+
+const workerBelongsToEmpresa = (worker: CatalogWorker, empresa: string) => {
+  if (!empresa) return true;
+
+  const empresas = getWorkerCompanies(worker);
+
+  // Si no trae empresa, NO entra.
+  // Esto evita mezclar GasValpo con Comercial.
+  if (empresas.length === 0) return false;
+
+  return empresas.some(
+    (item) => normalizeText(item) === normalizeText(empresa)
+  );
+};
+
+const workerHasCargo = (worker: CatalogWorker, cargo: string) => {
+  return normalizeText(worker.cargo) === normalizeText(cargo);
+};
+
 const normalizeRulesSnapshot = (template: CreatorTemplate) => {
   return JSON.stringify({
     fixedAssignments: [...template.fixedAssignments]
@@ -187,14 +227,32 @@ export default function RestriccionesModal({
 
   const [bonusRouteId, setBonusRouteId] = useState("");
 
+  const filteredWorkers = useMemo(() => {
+    return catalogWorkers.filter((worker) =>
+      workerBelongsToEmpresa(worker, empresa)
+    );
+  }, [catalogWorkers, empresa]);
+
+  const filteredReaders = useMemo(() => {
+    return filteredWorkers.filter((worker) => workerHasCargo(worker, "lector"));
+  }, [filteredWorkers]);
+
+  const filteredSectors = useMemo(() => {
+    return catalogSectors.filter((sector) => {
+      if (!empresa) return true;
+
+      return normalizeText(sector.empresa) === normalizeText(empresa);
+    });
+  }, [catalogSectors, empresa]);
+
   const workerById = useMemo(
-    () => new Map(catalogWorkers.map((worker) => [worker.id, worker])),
-    [catalogWorkers]
+    () => new Map(filteredWorkers.map((worker) => [worker.id, worker])),
+    [filteredWorkers]
   );
 
   const sectorById = useMemo(
-    () => new Map(catalogSectors.map((sector) => [sector.id, sector])),
-    [catalogSectors]
+    () => new Map(filteredSectors.map((sector) => [sector.id, sector])),
+    [filteredSectors]
   );
 
   const selectedFixedRoute = useMemo(() => {
@@ -208,14 +266,14 @@ export default function RestriccionesModal({
   const fixedRouteSectors = useMemo(() => {
     if (!fixedRouteId) return [];
 
-    return catalogSectors.filter((sector) => sector.rutaId === fixedRouteId);
-  }, [catalogSectors, fixedRouteId]);
+    return filteredSectors.filter((sector) => sector.rutaId === fixedRouteId);
+  }, [filteredSectors, fixedRouteId]);
 
   const bonusRouteSectors = useMemo(() => {
     if (!bonusRouteId) return [];
 
-    return catalogSectors.filter((sector) => sector.rutaId === bonusRouteId);
-  }, [catalogSectors, bonusRouteId]);
+    return filteredSectors.filter((sector) => sector.rutaId === bonusRouteId);
+  }, [filteredSectors, bonusRouteId]);
 
   const selectedBonusSectorsFromRoute = useMemo(() => {
     if (!bonusRouteId) return new Set<string>();
@@ -317,7 +375,7 @@ export default function RestriccionesModal({
         ...current.rotating,
         trabajadorIds: selectionToArray(
           keys,
-          catalogWorkers.map((worker) => worker.id)
+          filteredReaders.map((worker) => worker.id)
         ),
         tipos: [...BOTH_ASSIGNMENT_TYPES],
       },
@@ -389,6 +447,17 @@ export default function RestriccionesModal({
 
             <ModalBody>
               <div className="space-y-5">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                  <p className="font-semibold">
+                    Empresa seleccionada: {empresa || "Sin empresa"}
+                  </p>
+
+                  <p className="mt-1">
+                    Solo se muestran lectores y sectores asociados a esta
+                    empresa.
+                  </p>
+                </div>
+
                 <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-800">
                   <div className="flex items-start gap-3">
                     <Info size={20} className="mt-0.5 shrink-0" />
@@ -441,7 +510,7 @@ export default function RestriccionesModal({
                         }
                         variant="bordered"
                       >
-                        {catalogWorkers.map((worker) => (
+                        {filteredReaders.map((worker) => (
                           <SelectItem
                             key={worker.id}
                             classNames={selectedItemClassNames}
@@ -620,7 +689,7 @@ export default function RestriccionesModal({
                         onSelectionChange={updateBonusWorkers}
                         variant="bordered"
                       >
-                        {catalogWorkers.map((worker) => (
+                        {filteredReaders.map((worker) => (
                           <SelectItem
                             key={worker.id}
                             classNames={selectedItemClassNames}

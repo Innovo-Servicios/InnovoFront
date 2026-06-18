@@ -17,23 +17,24 @@ import {
 import {
   AlertTriangle,
   CalendarDays,
-  Dice5,
   Eraser,
   Info,
   Save,
   Settings2,
+  UserRoundCog,
   Wand2,
 } from "lucide-react";
 
 import {
   getAssignmentCreatorCatalog,
   getAssignmentCreatorTemplate,
-  getChileanHolidays,
-  previewAssignmentCreator,
   saveAssignmentCreatorTemplate,
 } from "@/api/adm/api";
 import { useAuth } from "@/app/AuthContext";
 import RestriccionesModal from "@/components/Asignaciones/RestriccionesModal";
+import AusenciasPlanificadasModal, {
+  PlannedAbsenceRule,
+} from "@/components/Asignaciones/AusenciasPlanificadasModal";
 import {
   AssignmentStep,
   buildDateFromDay,
@@ -51,7 +52,6 @@ import {
 } from "@/components/Asignaciones/utils/calendarRules";
 
 type AssignmentType = "lectura" | "reparto";
-type ConflictChoice = "keep" | "replace";
 
 interface CatalogRoute {
   id: string;
@@ -72,7 +72,12 @@ interface CatalogWorker {
   id: string;
   nombre: string;
   rut: string;
-  cargo: string;
+  cargo: "administracion" | "lector" | "supervisor" | "inspector" | string;
+
+  empresas_trabajador?: string[];
+  empresasTrabajador?: string[];
+  empresas?: string[];
+  empresa?: string | string[];
 }
 
 interface CreatorCatalog {
@@ -111,55 +116,13 @@ interface CreatorTemplate {
   restrictions: RestrictionRule[];
 }
 
-interface PreviewAssignment {
-  key: string;
-  fecha: string;
-  tipo: AssignmentType;
-  source: "fija" | "rotativa" | "restante" | "manual";
-  trabajador: CatalogWorker;
-  sector: CatalogSector;
-  conflicto: null | {
-    asignacionId: string;
-    trabajador: CatalogWorker;
-    apoyo: boolean;
-  };
-}
-
-interface AssignmentPreview {
-  resumen: {
-    total: number;
-    nuevas: number;
-    conflictos: number;
-    omitidas: number;
-    lectura: number;
-    reparto: number;
-  };
-  porTrabajador: Array<{
-    trabajador: CatalogWorker;
-    total: number;
-    lectura: number;
-    reparto: number;
-    fija: number;
-    rotativa: number;
-    restante: number;
-    manual: number;
-  }>;
-  asignaciones: PreviewAssignment[];
-  omitidas: Array<{
-    sector: CatalogSector;
-    tipo: AssignmentType;
-    reason: string;
-  }>;
-}
-
-interface ChileanHoliday {
-  date: string;
-  title?: string;
-  type?: string;
-  inalienable?: boolean;
+interface AssignmentCreatorProps {
+  onSaved?: () => void;
 }
 
 const ASSIGNMENT_TYPES: AssignmentType[] = ["lectura", "reparto"];
+
+const DEFAULT_EMPRESAS = ["GasValpo", "Comercial"];
 
 const emptyTemplate = (): CreatorTemplate => ({
   fixedAssignments: [],
@@ -172,6 +135,19 @@ const emptyTemplate = (): CreatorTemplate => ({
   leftoverWorkers: [],
   restrictions: [],
 });
+
+/*
+  Temporal.
+  Lo correcto después es traer feriados desde backend:
+  GET /api/feriados?year=2026
+*/
+const HOLIDAYS_BY_YEAR: Record<string, string[]> = {
+  "2026": [
+    // "2026-01-01",
+    // "2026-04-03",
+    // "2026-05-01",
+  ],
+};
 
 const nextMonthValue = () => {
   const today = new Date();
@@ -186,6 +162,178 @@ const selectionToArray = (keys: unknown, allValues: string[] = []) => {
   if (keys === "all") return allValues;
 
   return Array.from(keys as Iterable<unknown>).map(String);
+};
+
+const normalizeText = (value: unknown) => {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+};
+
+const getWorkerCompanies = (worker: CatalogWorker) => {
+  const empresaValue = Array.isArray(worker.empresa)
+    ? worker.empresa
+    : worker.empresa
+    ? [worker.empresa]
+    : [];
+
+  return [
+    ...(worker.empresas_trabajador || []),
+    ...(worker.empresasTrabajador || []),
+    ...(worker.empresas || []),
+    ...empresaValue,
+  ];
+};
+
+const workerBelongsToEmpresa = (worker: CatalogWorker, empresa: string) => {
+  if (!empresa) return true;
+
+  const empresas = getWorkerCompanies(worker);
+
+  /*
+    Si backend todavía no manda empresas_trabajador en todos los trabajadores,
+    no bloqueamos al lector para no romper la pantalla.
+    Cuando venga el dato, este filtro separa GasValpo/Comercial correctamente.
+  */
+  if (empresas.length === 0) return true;
+
+  return empresas.some(
+    (item) => normalizeText(item) === normalizeText(empresa)
+  );
+};
+
+const workerHasCargo = (worker: CatalogWorker, cargo: string) => {
+  return normalizeText(worker.cargo) === normalizeText(cargo);
+};
+
+const normalizeWorker = (worker: any): CatalogWorker | null => {
+  if (!worker) return null;
+
+  const id = worker.id || worker._id;
+
+  if (!id) return null;
+
+  const empresaValue = Array.isArray(worker.empresa)
+    ? worker.empresa
+    : worker.empresa
+    ? [worker.empresa]
+    : [];
+
+  const empresasValue = Array.isArray(worker.empresas)
+    ? worker.empresas
+    : [];
+
+  const empresasTrabajadorValue = Array.isArray(worker.empresas_trabajador)
+    ? worker.empresas_trabajador
+    : Array.isArray(worker.empresasTrabajador)
+    ? worker.empresasTrabajador
+    : [];
+
+  return {
+    id: String(id),
+    nombre: String(worker.nombre || worker.Nombre || ""),
+    rut: String(worker.rut || worker.Rut || ""),
+    cargo: normalizeText(worker.cargo || worker.rol || ""),
+
+    empresas_trabajador: empresasTrabajadorValue,
+    empresasTrabajador: empresasTrabajadorValue,
+    empresas: empresasValue,
+    empresa: empresaValue,
+  };
+};
+
+const mergeWorkers = (...groups: any[][]): CatalogWorker[] => {
+  const map = new Map<string, CatalogWorker>();
+
+  for (const group of groups) {
+    if (!Array.isArray(group)) continue;
+
+    for (const rawWorker of group) {
+      const worker = normalizeWorker(rawWorker);
+
+      if (!worker) continue;
+
+      const previous = map.get(worker.id);
+
+      if (!previous) {
+        map.set(worker.id, worker);
+        continue;
+      }
+
+      const previousCompanies = getWorkerCompanies(previous);
+      const currentCompanies = getWorkerCompanies(worker);
+
+      map.set(worker.id, {
+        ...previous,
+        ...worker,
+        empresas_trabajador: Array.from(
+          new Set([
+            ...(previous.empresas_trabajador || []),
+            ...(worker.empresas_trabajador || []),
+          ])
+        ),
+        empresasTrabajador: Array.from(
+          new Set([
+            ...(previous.empresasTrabajador || []),
+            ...(worker.empresasTrabajador || []),
+          ])
+        ),
+        empresas: Array.from(
+          new Set([
+            ...(previous.empresas || []),
+            ...(worker.empresas || []),
+            ...previousCompanies,
+            ...currentCompanies,
+          ])
+        ),
+        empresa:
+          currentCompanies.length > 0
+            ? currentCompanies
+            : previousCompanies.length > 0
+            ? previousCompanies
+            : [],
+      });
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => {
+    const cargoOrder: Record<string, number> = {
+      inspector: 1,
+      supervisor: 2,
+      lector: 3,
+      administracion: 4,
+    };
+
+    const cargoA = cargoOrder[normalizeText(a.cargo)] ?? 99;
+    const cargoB = cargoOrder[normalizeText(b.cargo)] ?? 99;
+
+    if (cargoA !== cargoB) return cargoA - cargoB;
+
+    return a.nombre.localeCompare(b.nombre);
+  });
+};
+
+const seededRandom = (seed: number) => {
+  let value = seed || 1;
+
+  value = Math.imul(value ^ (value >>> 15), value | 1);
+  value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+
+  return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+};
+
+const shuffleBySeed = <T,>(items: T[], seed: number) => {
+  const copy = [...items];
+
+  for (let index = copy.length - 1; index > 0; index--) {
+    const randomIndex = Math.floor(seededRandom(seed + index) * (index + 1));
+
+    [copy[index], copy[randomIndex]] = [copy[randomIndex], copy[index]];
+  }
+
+  return copy;
 };
 
 const parseJsonResponse = async (
@@ -206,9 +354,27 @@ const parseJsonResponse = async (
   return data;
 };
 
-interface AssignmentCreatorProps {
-  onSaved?: () => void;
-}
+const normalizeCatalogResponse = (data: any): CreatorCatalog => {
+  const trabajadores = mergeWorkers(
+    data?.trabajadores,
+    data?.workers,
+    data?.lectores,
+    data?.inspectores,
+    data?.supervisores,
+    data?.administradores,
+    data?.administracion
+  );
+
+  return {
+    empresas:
+      Array.isArray(data?.empresas) && data.empresas.length > 0
+        ? data.empresas
+        : DEFAULT_EMPRESAS,
+    rutas: Array.isArray(data?.rutas) ? data.rutas : [],
+    sectores: Array.isArray(data?.sectores) ? data.sectores : [],
+    trabajadores,
+  };
+};
 
 export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
   const { token, authenticatedFetch } = useAuth();
@@ -219,14 +385,20 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
     onOpenChange: onRestrictionsOpenChange,
   } = useDisclosure();
 
+  const {
+    isOpen: isAbsencesOpen,
+    onOpen: onAbsencesOpen,
+    onOpenChange: onAbsencesOpenChange,
+  } = useDisclosure();
+
   const [catalog, setCatalog] = useState<CreatorCatalog>({
-    empresas: [],
+    empresas: DEFAULT_EMPRESAS,
     rutas: [],
     sectores: [],
     trabajadores: [],
   });
 
-  const [empresa, setEmpresa] = useState("");
+  const [empresa, setEmpresa] = useState(DEFAULT_EMPRESAS[0]);
   const [monthValue, setMonthValue] = useState(nextMonthValue);
   const minMonthValue = useMemo(() => nextMonthValue(), []);
 
@@ -234,43 +406,24 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
   const [routeSchedules, setRouteSchedules] = useState<
     Record<string, RouteSchedule>
   >({});
-  const [preview, setPreview] = useState<AssignmentPreview | null>(null);
-  const [, setConflictChoices] = useState<Record<string, ConflictChoice>>({});
+
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [holidayErrorMessage, setHolidayErrorMessage] = useState<string | null>(
-    null
-  );
-  const [holidaysByYear, setHolidaysByYear] = useState<Record<string, string[]>>(
-    {}
-  );
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
-  const [isLoadingHolidays, setIsLoadingHolidays] = useState(false);
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
-  const [isPreviewing, setIsPreviewing] = useState(false);
+  const [rotationSeed, setRotationSeed] = useState(1);
+  const [absences, setAbsences] = useState<PlannedAbsenceRule[]>([]);
 
   const monthTotalDays = useMemo(
     () => getMonthTotalDays(monthValue),
     [monthValue]
   );
 
-  const selectedYear = useMemo(() => {
-    return Number(monthValue.split("-")[0]);
-  }, [monthValue]);
-
-  const selectedYearKey = String(selectedYear);
-
-  const hasHolidayData = useMemo(
-    () => Object.prototype.hasOwnProperty.call(holidaysByYear, selectedYearKey),
-    [holidaysByYear, selectedYearKey]
-  );
-
   const holidayDates = useMemo(() => {
-    return holidaysByYear[selectedYearKey] || [];
-  }, [holidaysByYear, selectedYearKey]);
+    const year = monthValue.split("-")[0];
 
-  const hasHolidayLoadBlocker =
-    isLoadingHolidays || Boolean(holidayErrorMessage) || !hasHolidayData;
+    return HOLIDAYS_BY_YEAR[year] || [];
+  }, [monthValue]);
 
   const calendarConfig = useMemo<CalendarRuleConfig>(
     () => ({
@@ -283,6 +436,12 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
   const isPastMonth = useMemo(() => {
     return monthValue < minMonthValue;
   }, [monthValue, minMonthValue]);
+
+  const scheduleErrors = useMemo(() => {
+    return Object.values(routeSchedules).flatMap((schedule) => schedule.errors);
+  }, [routeSchedules]);
+
+  const hasScheduleErrors = scheduleErrors.length > 0;
 
   const hasEveryRouteDates = useMemo(() => {
     if (catalog.rutas.length === 0) return false;
@@ -299,11 +458,172 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
     });
   }, [catalog.rutas, routeSchedules]);
 
-  const scheduleErrors = useMemo(() => {
-    return Object.values(routeSchedules).flatMap((schedule) => schedule.errors);
-  }, [routeSchedules]);
+  const companyWorkers = useMemo(() => {
+    return catalog.trabajadores.filter((worker) =>
+      workerBelongsToEmpresa(worker, empresa)
+    );
+  }, [catalog.trabajadores, empresa]);
 
-  const hasScheduleErrors = scheduleErrors.length > 0;
+  const companyReaders = useMemo(() => {
+    return companyWorkers.filter((worker) => workerHasCargo(worker, "lector"));
+  }, [companyWorkers]);
+
+  const companySectors = useMemo(() => {
+    return catalog.sectores.filter((sector) => {
+      if (!empresa) return true;
+
+      return normalizeText(sector.empresa) === normalizeText(empresa);
+    });
+  }, [catalog.sectores, empresa]);
+
+  const workerById = useMemo(() => {
+    return new Map(companyWorkers.map((worker) => [worker.id, worker]));
+  }, [companyWorkers]);
+
+  const sectorsByRouteId = useMemo(() => {
+    const map = new Map<string, CatalogSector[]>();
+
+    for (const sector of companySectors) {
+      if (!sector.rutaId) continue;
+
+      const current = map.get(sector.rutaId) || [];
+
+      map.set(sector.rutaId, [...current, sector]);
+    }
+
+    catalog.rutas.forEach((route) => {
+      const sectors = map.get(route.id) || [];
+
+      map.set(
+        route.id,
+        [...sectors].sort((a, b) => {
+          const aNumber = a.numero ?? 0;
+          const bNumber = b.numero ?? 0;
+
+          return aNumber - bNumber;
+        })
+      );
+    });
+
+    return map;
+  }, [catalog.rutas, companySectors]);
+
+  const fixedRuleBySectorId = useMemo(() => {
+    const map = new Map<string, FixedAssignmentRule>();
+
+    for (const rule of template.fixedAssignments) {
+      map.set(rule.sectorId, rule);
+    }
+
+    return map;
+  }, [template.fixedAssignments]);
+
+  const bonusSectorIds = useMemo(() => {
+    return new Set(template.rotating.sectorIds);
+  }, [template.rotating.sectorIds]);
+
+  const bonusWorkers = useMemo(() => {
+    const selectedBonusWorkers = template.rotating.trabajadorIds
+      .map((workerId) => workerById.get(workerId))
+      .filter(Boolean) as CatalogWorker[];
+
+    return shuffleBySeed(selectedBonusWorkers, rotationSeed + 777);
+  }, [template.rotating.trabajadorIds, workerById, rotationSeed]);
+
+  const freeWorkers = useMemo(() => {
+    return shuffleBySeed(companyReaders, rotationSeed + 333);
+  }, [companyReaders, rotationSeed]);
+
+  const freeSectorIds = useMemo(() => {
+    return companySectors
+      .filter((sector) => {
+        const isFixed = fixedRuleBySectorId.has(sector.id);
+        const isBonus = bonusSectorIds.has(sector.id);
+
+        return !isFixed && !isBonus;
+      })
+      .sort((a, b) => {
+        const routeDiff = (a.rutaNumero ?? 0) - (b.rutaNumero ?? 0);
+
+        if (routeDiff !== 0) return routeDiff;
+
+        return (a.numero ?? 0) - (b.numero ?? 0);
+      })
+      .map((sector) => sector.id);
+  }, [companySectors, fixedRuleBySectorId, bonusSectorIds]);
+
+  const bonusSectorIdsOrdered = useMemo(() => {
+    return companySectors
+      .filter((sector) => bonusSectorIds.has(sector.id))
+      .sort((a, b) => {
+        const routeDiff = (a.rutaNumero ?? 0) - (b.rutaNumero ?? 0);
+
+        if (routeDiff !== 0) return routeDiff;
+
+        return (a.numero ?? 0) - (b.numero ?? 0);
+      })
+      .map((sector) => sector.id);
+  }, [companySectors, bonusSectorIds]);
+
+  const getBonusWorkerForSector = (sectorId: string) => {
+    if (bonusWorkers.length === 0) return null;
+
+    const index = bonusSectorIdsOrdered.indexOf(sectorId);
+
+    if (index < 0) return null;
+
+    return bonusWorkers[index % bonusWorkers.length] || null;
+  };
+
+  const getFreeWorkerForSector = (sectorId: string) => {
+    if (freeWorkers.length === 0) return null;
+
+    const index = freeSectorIds.indexOf(sectorId);
+
+    if (index < 0) return null;
+
+    return freeWorkers[index % freeWorkers.length] || null;
+  };
+
+  const getSectorBaseWorker = (sector: CatalogSector) => {
+    const fixedRule = fixedRuleBySectorId.get(sector.id);
+
+    if (fixedRule) {
+      return workerById.get(fixedRule.trabajadorId) || null;
+    }
+
+    if (bonusSectorIds.has(sector.id)) {
+      return getBonusWorkerForSector(sector.id);
+    }
+
+    return getFreeWorkerForSector(sector.id);
+  };
+
+  const getSectorAssignmentLabel = (sector: CatalogSector) => {
+    const baseWorker = getSectorBaseWorker(sector);
+
+    if (!baseWorker) {
+      if (fixedRuleBySectorId.has(sector.id)) {
+        return "Lector fijo no disponible";
+      }
+
+      if (bonusSectorIds.has(sector.id)) {
+        return "Bono sin lector asignado";
+      }
+
+      return "Rotación libre sin lector";
+    }
+
+    return baseWorker.nombre;
+  };
+
+  const getSectorAssignmentColor = (sector: CatalogSector) => {
+    if (fixedRuleBySectorId.has(sector.id)) return "primary";
+
+    if (bonusSectorIds.has(sector.id)) return "warning";
+
+    return "default";
+  };
 
   const loadCatalog = useCallback(
     async (selectedEmpresa?: string) => {
@@ -319,17 +639,36 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
           authenticatedFetch
         );
 
-        const data = await parseJsonResponse(
+        const rawData = await parseJsonResponse(
           response,
           "No se pudo cargar el catálogo."
         );
 
+        const data = normalizeCatalogResponse(rawData);
+
         setCatalog(data);
+
+        console.log(
+          "TRABAJADORES NORMALIZADOS",
+          data.trabajadores.map((worker) => ({
+            nombre: worker.nombre,
+            cargo: worker.cargo,
+            empresas: getWorkerCompanies(worker),
+          }))
+        );
+
+        setEmpresa((currentEmpresa) => {
+          if (currentEmpresa && data.empresas.includes(currentEmpresa)) {
+            return currentEmpresa;
+          }
+
+          return data.empresas[0] || DEFAULT_EMPRESAS[0];
+        });
 
         setRouteSchedules((current) => {
           const next: Record<string, RouteSchedule> = {};
 
-          for (const route of data.rutas as CatalogRoute[]) {
+          for (const route of data.rutas) {
             const currentSchedule = current[route.id];
 
             next[route.id] = currentSchedule
@@ -400,90 +739,15 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
   );
 
   useEffect(() => {
-    if (!token || !Number.isInteger(selectedYear)) return;
-
-    if (hasHolidayData) {
-      setHolidayErrorMessage(null);
-      return;
-    }
-
-    let isActive = true;
-
-    const loadHolidays = async () => {
-      setIsLoadingHolidays(true);
-      setHolidayErrorMessage(null);
-
-      try {
-        const response = await getChileanHolidays(
-          token,
-          selectedYear,
-          authenticatedFetch
-        );
-        const data = await parseJsonResponse(
-          response,
-          "No se pudieron cargar los feriados chilenos."
-        );
-        const holidays = Array.isArray(data?.holidays)
-          ? (data.holidays as ChileanHoliday[])
-          : [];
-        const holidayDatesForYear = holidays
-          .map((holiday) => holiday.date)
-          .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date))
-          .sort();
-
-        if (!holidayDatesForYear.length) {
-          throw new Error(
-            `No se encontraron feriados chilenos para ${selectedYear}.`
-          );
-        }
-
-        if (!isActive) return;
-
-        setHolidaysByYear((current) => ({
-          ...current,
-          [String(selectedYear)]: holidayDatesForYear,
-        }));
-      } catch (error) {
-        if (!isActive) return;
-
-        setHolidayErrorMessage(
-          error instanceof Error
-            ? error.message
-            : "No se pudieron cargar los feriados chilenos."
-        );
-      } finally {
-        if (isActive) {
-          setIsLoadingHolidays(false);
-        }
-      }
-    };
-
-    loadHolidays();
-
-    return () => {
-      isActive = false;
-    };
-  }, [authenticatedFetch, hasHolidayData, selectedYear, token]);
-
-  useEffect(() => {
     loadCatalog();
   }, [loadCatalog]);
 
   useEffect(() => {
-    if (!empresa && catalog.empresas.length > 0) {
-      setEmpresa(catalog.empresas[0]);
-    }
-  }, [catalog.empresas, empresa]);
-
-  useEffect(() => {
     if (!empresa) return;
 
-    setPreview(null);
-    setConflictChoices({});
-
-    loadCatalog(empresa);
+    setRotationSeed(1);
     loadTemplate(empresa);
-  }, [empresa, loadCatalog, loadTemplate]);
+  }, [empresa, loadTemplate]);
 
   useEffect(() => {
     setRouteSchedules((current) =>
@@ -515,6 +779,7 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
 
       setTemplate(data.plantilla || templateToSave);
       setStatusMessage(data.message || "Plantilla guardada correctamente.");
+      onSaved?.();
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -531,8 +796,6 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
     field: AssignmentStep,
     rawValue: string
   ) => {
-    // La verificación completa no se edita manualmente.
-    // Se calcula automáticamente desde el adelanto de verificación.
     if (field === "verificacion") return;
 
     const cleanValue = rawValue.replace(/\D/g, "").slice(0, 2);
@@ -552,16 +815,15 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
           nextSchedule.verificacion = "";
         }
 
-        const next = {
-          ...current,
-          [routeId]: nextSchedule,
-        };
-
-        return validateAllSchedules(next, calendarConfig);
+        return validateAllSchedules(
+          {
+            ...current,
+            [routeId]: nextSchedule,
+          },
+          calendarConfig
+        );
       });
 
-      setPreview(null);
-      setConflictChoices({});
       setStatusMessage(null);
       setErrorMessage(null);
       return;
@@ -607,16 +869,15 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
         }
       }
 
-      const next = {
-        ...current,
-        [routeId]: nextSchedule,
-      };
-
-      return validateAllSchedules(next, calendarConfig);
+      return validateAllSchedules(
+        {
+          ...current,
+          [routeId]: nextSchedule,
+        },
+        calendarConfig
+      );
     });
 
-    setPreview(null);
-    setConflictChoices({});
     setStatusMessage(null);
     setErrorMessage(null);
   };
@@ -626,34 +887,23 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
     field: AssignmentStep,
     value: string
   ) => {
-    const cleanValue = value.replace(/\D/g, "").slice(0, 2);
+    const normalizedDay = normalizeDayInput(value, monthTotalDays);
 
-    if (!cleanValue) {
-      updateScheduleField(routeId, field, "");
-      return;
-    }
-
-    const normalizedDay = normalizeDayInput(cleanValue, monthTotalDays);
-
-    if (!normalizedDay) {
+    if (!normalizedDay && value.trim() !== "") {
       setErrorMessage(
         `El día debe estar entre 01 y ${String(monthTotalDays).padStart(
           2,
           "0"
         )}.`
       );
-      return;
     }
 
     updateScheduleField(routeId, field, normalizedDay);
   };
 
   const generateProposal = () => {
-    if (hasHolidayLoadBlocker) {
-      setErrorMessage(
-        holidayErrorMessage ||
-          "Espera a que se carguen los feriados chilenos antes de generar propuesta."
-      );
+    if (!empresa) {
+      setErrorMessage("Selecciona una empresa antes de generar propuesta.");
       return;
     }
 
@@ -661,6 +911,15 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
       setErrorMessage("No hay rutas disponibles para generar propuesta.");
       return;
     }
+
+    if (companyReaders.length === 0) {
+      setErrorMessage(
+        `No hay lectores disponibles para ${empresa}. Revisa cargo="lector" y empresas_trabajador.`
+      );
+      return;
+    }
+
+    setRotationSeed(Date.now());
 
     const proposal = generateCalendarProposal(catalog.rutas, calendarConfig);
 
@@ -671,8 +930,6 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
     }
 
     setRouteSchedules(next);
-    setPreview(null);
-    setConflictChoices({});
     setStatusMessage("Propuesta de calendario generada correctamente.");
     setErrorMessage(null);
   };
@@ -685,44 +942,12 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
     }
 
     setRouteSchedules(next);
-    setPreview(null);
-    setConflictChoices({});
     setStatusMessage("Calendario limpiado. Puedes ingresar fechas desde cero.");
     setErrorMessage(null);
   };
 
-  const buildPreviewPayload = () => {
-    const [yearText, monthText] = monthValue.split("-");
-
-    return {
-      empresa,
-      year: Number(yearText),
-      month: Number(monthText),
-      routeDays: Object.values(routeSchedules).map((schedule) => ({
-        rutaId: schedule.rutaId,
-        rutaNumero: schedule.rutaNumero,
-        lectura: schedule.lectura,
-        adelantoVerificacion: schedule.adelantoVerificacion,
-        verificacion: schedule.verificacion,
-        reparto: schedule.reparto,
-      })),
-      template,
-      calendarRules: {
-        holidays: holidayDates,
-      },
-    };
-  };
-
-  const generatePreview = async () => {
+  const saveAssignmentPlan = async () => {
     if (!token || !empresa) return;
-
-    if (hasHolidayLoadBlocker) {
-      setErrorMessage(
-        holidayErrorMessage ||
-          "Espera a que se carguen los feriados chilenos antes de previsualizar."
-      );
-      return;
-    }
 
     if (isPastMonth) {
       setErrorMessage(
@@ -740,45 +965,18 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
 
     if (hasScheduleErrors) {
       setErrorMessage(
-        "Hay incongruencias en el calendario. Corrige las filas marcadas antes de previsualizar."
+        "Hay incongruencias en el calendario. Corrige las filas marcadas antes de guardar."
       );
       return;
     }
 
-    setIsPreviewing(true);
-    setStatusMessage(null);
-    setErrorMessage(null);
-
-    try {
-      const response = await previewAssignmentCreator(
-        token,
-        buildPreviewPayload(),
-        authenticatedFetch
-      );
-
-      const data = await parseJsonResponse(
-        response,
-        "No se pudo generar la previsualización."
-      );
-
-      setPreview(data);
-      setConflictChoices({});
-      setStatusMessage(
-        "Previsualización generada correctamente. Revisa el resultado antes de guardar."
-      );
-
-      onSaved?.();
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "No se pudo generar la previsualización."
-      );
-      setPreview(null);
-    } finally {
-      setIsPreviewing(false);
-    }
+    await saveTemplate(template);
   };
+  
+  const workersForRestrictions = catalog.trabajadores.map((worker) => ({
+    ...worker,
+    empresa: Array.isArray(worker.empresa) ? worker.empresa[0] : worker.empresa,
+  }));
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -794,13 +992,15 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
         <div className="flex min-h-full flex-col gap-5">
           <Card className="shrink-0">
-            <CardBody className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_1fr_auto]">
+            <CardBody className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_1fr_auto_auto]">
               <Select
                 label="Empresa"
                 selectedKeys={empresa ? new Set([empresa]) : new Set([])}
                 onSelectionChange={(keys) => {
                   const nextEmpresa = selectionToArray(keys)[0] || "";
                   setEmpresa(nextEmpresa);
+                  setErrorMessage(null);
+                  setStatusMessage(null);
                 }}
                 isDisabled={isLoadingCatalog}
                 variant="bordered"
@@ -821,14 +1021,10 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
                     setErrorMessage(
                       "Las asignaciones se generan desde el mes siguiente en adelante."
                     );
-                    setPreview(null);
-                    setConflictChoices({});
                     return;
                   }
 
                   setMonthValue(value);
-                  setPreview(null);
-                  setConflictChoices({});
                   setErrorMessage(null);
                 }}
                 isInvalid={isPastMonth}
@@ -849,6 +1045,18 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
               >
                 Reglas permanentes
               </Button>
+
+              <Button
+                className="h-14 self-end"
+                variant="flat"
+                color={absences.length > 0 ? "danger" : "default"}
+                startContent={<UserRoundCog size={18} />}
+                isDisabled={!empresa || isLoadingCatalog}
+                onPress={onAbsencesOpen}
+              >
+                Ausencias planificadas
+                {absences.length > 0 ? ` (${absences.length})` : ""}
+              </Button>
             </CardBody>
           </Card>
 
@@ -862,23 +1070,6 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
               </p>
             </div>
           </div>
-
-          {isLoadingHolidays ? (
-            <Card className="shrink-0 border border-blue-100 bg-blue-50">
-              <CardBody className="flex items-center gap-3 text-sm text-blue-700">
-                <Spinner size="sm" />
-                Cargando feriados chilenos para {selectedYear}.
-              </CardBody>
-            </Card>
-          ) : null}
-
-          {holidayErrorMessage ? (
-            <Card className="shrink-0 border border-danger-200 bg-danger-50">
-              <CardBody className="text-sm text-danger-700">
-                {holidayErrorMessage}
-              </CardBody>
-            </Card>
-          ) : null}
 
           {statusMessage ? (
             <Card className="shrink-0 border border-success-200 bg-success-50">
@@ -902,8 +1093,7 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
                 <div>
                   <h2 className="text-lg font-semibold">Calendario por ruta</h2>
                   <p className="text-sm text-slate-500">
-                    Escribe solo el día. Arriba de cada fecha se muestra el día
-                    de la semana.
+                    Cada ruta muestra sus sectores y el lector/regla asignada.
                   </p>
                 </div>
 
@@ -912,8 +1102,8 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
                     size="sm"
                     variant="flat"
                     startContent={<Wand2 size={16} />}
-                    isDisabled={hasHolidayLoadBlocker}
                     onPress={generateProposal}
+                    isDisabled={!empresa || isLoadingCatalog}
                   >
                     Generar propuesta
                   </Button>
@@ -924,11 +1114,12 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
                     color="danger"
                     startContent={<Eraser size={16} />}
                     onPress={clearSchedule}
+                    isDisabled={!empresa || isLoadingCatalog}
                   >
                     Limpiar calendario
                   </Button>
 
-                  {isLoadingCatalog || isLoadingHolidays ? (
+                  {isLoadingCatalog ? (
                     <Spinner size="sm" />
                   ) : (
                     <CalendarDays size={18} />
@@ -939,12 +1130,15 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
 
             <CardBody className="min-h-0 flex-1 p-4">
               <div className="h-full overflow-auto rounded-2xl border border-slate-200">
-                <table className="w-full min-w-[1180px] border-collapse text-sm">
+                <table className="w-full min-w-[1250px] border-collapse text-sm">
                   <thead className="sticky top-0 z-10 text-xs uppercase text-slate-700">
                     <tr className="bg-gradient-to-r from-blue-100 via-purple-100 to-blue-100">
                       <th className="px-4 py-3 text-left font-bold">Ruta</th>
-                      <th className="px-4 py-3 text-center font-bold">
+                      <th className="px-4 py-3 text-left font-bold">
                         Sectores
+                      </th>
+                      <th className="px-4 py-3 text-left font-bold">
+                        Lector / regla
                       </th>
                       <th className="px-4 py-3 text-center font-bold">
                         Lectura
@@ -965,9 +1159,13 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
                   </thead>
 
                   <tbody>
-                    {catalog.rutas.map((route, index) => {
+                    {catalog.rutas.flatMap((route, routeIndex) => {
                       const schedule =
                         routeSchedules[route.id] || emptyRouteSchedule(route);
+
+                      const sectors = sectorsByRouteId.get(route.id) || [];
+                      const visibleSectors =
+                        sectors.length > 0 ? sectors : [null];
 
                       const hasDates =
                         schedule.lectura ||
@@ -976,100 +1174,207 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
                         schedule.reparto;
 
                       const hasErrors = schedule.errors.length > 0;
+                      const rowSpan = visibleSectors.length;
 
-                      return (
-                        <tr
-                          key={route.id}
-                          className={
-                            index % 2 === 0
-                              ? "border-t border-slate-100 bg-white"
-                              : "border-t border-slate-100 bg-slate-50"
-                          }
-                        >
-                          <td className="px-4 py-3 font-semibold text-slate-800">
-                            Ruta {route.numero ?? "N/A"}
-                          </td>
+                      return visibleSectors.map((sector, sectorIndex) => {
+                        const isFirstSectorRow = sectorIndex === 0;
 
-                          <td className="px-4 py-3 text-center text-slate-700">
-                            {route.sectores}
-                          </td>
-
-                          <ScheduleInput
-                            routeNumero={route.numero}
-                            label="lectura"
-                            dateValue={schedule.lectura}
-                            colorClass="border-purple-200 bg-purple-50/40 data-[hover=true]:border-purple-300"
-                            onBlur={(value) =>
-                              handleScheduleBlur(route.id, "lectura", value)
+                        return (
+                          <tr
+                            key={`${route.id}-${
+                              sector?.id || "empty"
+                            }-${sectorIndex}`}
+                            className={
+                              routeIndex % 2 === 0
+                                ? "border-t border-slate-100 bg-white"
+                                : "border-t border-slate-100 bg-slate-50"
                             }
-                          />
+                          >
+                            {isFirstSectorRow ? (
+                              <td
+                                rowSpan={rowSpan}
+                                className="w-28 px-4 py-3 align-top font-semibold text-slate-800"
+                              >
+                                Ruta {route.numero ?? "N/A"}
+                              </td>
+                            ) : null}
 
-                          <ScheduleInput
-                            routeNumero={route.numero}
-                            label="adelanto verificación"
-                            dateValue={schedule.adelantoVerificacion}
-                            colorClass="border-amber-200 bg-amber-50/40 data-[hover=true]:border-amber-300"
-                            onBlur={(value) =>
-                              handleScheduleBlur(
-                                route.id,
-                                "adelantoVerificacion",
-                                value
-                              )
-                            }
-                          />
+                            <td className="min-w-[300px] px-4 py-2 align-top">
+                              {sector ? (
+                                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                                  <p className="font-semibold text-slate-800">
+                                    {sector.nombre}
+                                  </p>
 
-                          <ScheduleInput
-                            routeNumero={route.numero}
-                            label="verificación completa"
-                            dateValue={schedule.verificacion}
-                            colorClass="border-orange-200 bg-orange-50/40 opacity-90"
-                            isReadOnly
-                            onBlur={() => {}}
-                          />
-
-                          <ScheduleInput
-                            routeNumero={route.numero}
-                            label="reparto"
-                            dateValue={schedule.reparto}
-                            colorClass="border-emerald-200 bg-emerald-50/40 data-[hover=true]:border-emerald-300"
-                            onBlur={(value) =>
-                              handleScheduleBlur(route.id, "reparto", value)
-                            }
-                          />
-
-                          <td className="px-4 py-3 text-center">
-                            {!hasDates ? (
-                              <Chip size="sm" variant="flat">
-                                Pendiente
-                              </Chip>
-                            ) : hasErrors ? (
-                              <div className="flex flex-col items-center gap-1">
-                                <Chip
-                                  size="sm"
-                                  color="danger"
-                                  variant="flat"
-                                  startContent={<AlertTriangle size={14} />}
-                                >
-                                  Error
-                                </Chip>
-                                <p className="max-w-52 text-xs text-danger-600">
-                                  {schedule.errors[0]}
+                                  <p className="text-xs text-slate-500">
+                                    Sector {sector.numero ?? "N/A"}
+                                  </p>
+                                </div>
+                              ) : (
+                                <p className="text-sm text-slate-500">
+                                  Sin sectores.
                                 </p>
-                              </div>
-                            ) : (
-                              <Chip size="sm" color="success" variant="flat">
-                                OK
-                              </Chip>
-                            )}
-                          </td>
-                        </tr>
-                      );
+                              )}
+                            </td>
+
+                            <td className="min-w-[280px] px-4 py-2 align-top">
+                              {sector ? (
+                                <div className="flex flex-col gap-1">
+                                  <Chip
+                                    size="sm"
+                                    variant="flat"
+                                    color={getSectorAssignmentColor(sector)}
+                                    className="max-w-full justify-start"
+                                  >
+                                    {getSectorAssignmentLabel(sector)}
+                                  </Chip>
+
+                                  {fixedRuleBySectorId.has(sector.id) ? (
+                                    <span className="text-xs font-medium text-blue-600">
+                                      Sector fijo
+                                    </span>
+                                  ) : bonusSectorIds.has(sector.id) ? (
+                                    <span className="text-xs font-medium text-amber-600">
+                                      Sector con bono
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs text-slate-500">
+                                      Rotación libre
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <Chip size="sm" variant="flat">
+                                  Sin regla
+                                </Chip>
+                              )}
+                            </td>
+
+                            {isFirstSectorRow ? (
+                              <>
+                                <ScheduleInput
+                                  rowSpan={rowSpan}
+                                  routeNumero={route.numero}
+                                  label="lectura"
+                                  dateValue={schedule.lectura}
+                                  colorClass="border-purple-200 bg-purple-50/40 data-[hover=true]:border-purple-300"
+                                  onChange={(value) =>
+                                    updateScheduleField(
+                                      route.id,
+                                      "lectura",
+                                      value
+                                    )
+                                  }
+                                  onBlur={(value) =>
+                                    handleScheduleBlur(
+                                      route.id,
+                                      "lectura",
+                                      value
+                                    )
+                                  }
+                                />
+
+                                <ScheduleInput
+                                  rowSpan={rowSpan}
+                                  routeNumero={route.numero}
+                                  label="adelanto verificación"
+                                  dateValue={schedule.adelantoVerificacion}
+                                  colorClass="border-amber-200 bg-amber-50/40 data-[hover=true]:border-amber-300"
+                                  onChange={(value) =>
+                                    updateScheduleField(
+                                      route.id,
+                                      "adelantoVerificacion",
+                                      value
+                                    )
+                                  }
+                                  onBlur={(value) =>
+                                    handleScheduleBlur(
+                                      route.id,
+                                      "adelantoVerificacion",
+                                      value
+                                    )
+                                  }
+                                />
+
+                                <ScheduleInput
+                                  rowSpan={rowSpan}
+                                  routeNumero={route.numero}
+                                  label="verificación completa"
+                                  dateValue={schedule.verificacion}
+                                  colorClass="border-orange-200 bg-orange-50/40 opacity-90"
+                                  isReadOnly
+                                  onChange={() => {}}
+                                  onBlur={() => {}}
+                                />
+
+                                <ScheduleInput
+                                  rowSpan={rowSpan}
+                                  routeNumero={route.numero}
+                                  label="reparto"
+                                  dateValue={schedule.reparto}
+                                  colorClass="border-emerald-200 bg-emerald-50/40 data-[hover=true]:border-emerald-300"
+                                  onChange={(value) =>
+                                    updateScheduleField(
+                                      route.id,
+                                      "reparto",
+                                      value
+                                    )
+                                  }
+                                  onBlur={(value) =>
+                                    handleScheduleBlur(
+                                      route.id,
+                                      "reparto",
+                                      value
+                                    )
+                                  }
+                                />
+
+                                <td
+                                  rowSpan={rowSpan}
+                                  className="px-4 py-3 text-center align-top"
+                                >
+                                  {!hasDates ? (
+                                    <Chip size="sm" variant="flat">
+                                      Pendiente
+                                    </Chip>
+                                  ) : hasErrors ? (
+                                    <div className="flex flex-col items-center gap-1">
+                                      <Chip
+                                        size="sm"
+                                        color="danger"
+                                        variant="flat"
+                                        startContent={
+                                          <AlertTriangle size={14} />
+                                        }
+                                      >
+                                        Error
+                                      </Chip>
+
+                                      <p className="max-w-52 text-xs text-danger-600">
+                                        {schedule.errors[0]}
+                                      </p>
+                                    </div>
+                                  ) : (
+                                    <Chip
+                                      size="sm"
+                                      color="success"
+                                      variant="flat"
+                                    >
+                                      OK
+                                    </Chip>
+                                  )}
+                                </td>
+                              </>
+                            ) : null}
+                          </tr>
+                        );
+                      });
                     })}
 
                     {!isLoadingCatalog && catalog.rutas.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={7}
+                          colSpan={8}
                           className="px-4 py-10 text-center text-slate-500"
                         >
                           Selecciona una empresa con rutas configuradas.
@@ -1082,96 +1387,47 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
             </CardBody>
           </Card>
 
-          {preview ? (
-            <Card className="shrink-0 border border-blue-100 bg-blue-50">
-              <CardHeader className="border-b border-blue-100">
-                <div>
-                  <h2 className="text-lg font-semibold text-blue-900">
-                    Previsualización generada
-                  </h2>
-                  <p className="text-sm text-blue-700">
-                    Revisa el resumen antes de guardar la asignación definitiva.
-                  </p>
-                </div>
-              </CardHeader>
-
-              <CardBody>
-                <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-3 lg:grid-cols-6">
-                  <PreviewStat label="Total" value={preview.resumen.total} />
-                  <PreviewStat label="Nuevas" value={preview.resumen.nuevas} />
-                  <PreviewStat
-                    label="Conflictos"
-                    value={preview.resumen.conflictos}
-                  />
-                  <PreviewStat
-                    label="Omitidas"
-                    value={preview.resumen.omitidas}
-                  />
-                  <PreviewStat
-                    label="Lecturas"
-                    value={preview.resumen.lectura}
-                  />
-                  <PreviewStat
-                    label="Repartos"
-                    value={preview.resumen.reparto}
-                  />
-                </div>
-
-                {preview.resumen.conflictos > 0 ? (
-                  <div className="mt-4 rounded-xl border border-warning-200 bg-warning-50 p-3 text-sm text-warning-800">
-                    Hay conflictos en la propuesta. Deben resolverse antes de
-                    guardar.
-                  </div>
-                ) : null}
-              </CardBody>
-            </Card>
-          ) : null}
-
-          <div className="grid shrink-0 grid-cols-1 gap-4 border-t border-slate-200 pt-4 lg:grid-cols-2">
-            <Button
-              className="h-14 font-semibold"
-              variant="flat"
-              startContent={<Save size={18} />}
-              isLoading={isSavingTemplate}
-              isDisabled={!empresa || isSavingTemplate}
-              onPress={() => saveTemplate()}
-            >
-              Guardar plantilla
-            </Button>
-
+          <div className="grid shrink-0 grid-cols-1 gap-4 border-t border-slate-200 pt-4">
             <Button
               className="h-14 font-semibold"
               color="primary"
-              startContent={!isPreviewing ? <Dice5 size={18} /> : null}
-              isLoading={isPreviewing}
+              startContent={<Save size={18} />}
+              isLoading={isSavingTemplate}
               isDisabled={
                 !empresa ||
-                isPreviewing ||
+                isSavingTemplate ||
                 isPastMonth ||
-                hasHolidayLoadBlocker ||
                 !hasEveryRouteDates ||
                 hasScheduleErrors
               }
-              onPress={generatePreview}
+              onPress={saveAssignmentPlan}
             >
-              {preview
-                ? "Regenerar previsualización"
-                : "Previsualizar asignación"}
+              Guardar asignación
             </Button>
           </div>
         </div>
       </div>
 
       <RestriccionesModal
-        isOpen={isRestrictionsOpen}
-        onOpenChange={onRestrictionsOpenChange}
-        catalogRoutes={catalog.rutas}
-        catalogWorkers={catalog.trabajadores}
-        catalogSectors={catalog.sectores}
-        template={template}
-        isSavingTemplate={isSavingTemplate}
+      isOpen={isRestrictionsOpen}
+      onOpenChange={onRestrictionsOpenChange}
+      catalogRoutes={catalog.rutas}
+      catalogWorkers={workersForRestrictions}
+      catalogSectors={catalog.sectores}
+      template={template}
+      isSavingTemplate={isSavingTemplate}
+      empresa={empresa}
+      saveTemplate={saveTemplate}
+    />
+
+      <AusenciasPlanificadasModal
+        isOpen={isAbsencesOpen}
+        onOpenChange={onAbsencesOpenChange}
         empresa={empresa}
-        saveTemplate={saveTemplate}
+        targetMonth={monthValue}
+        catalogWorkers={catalog.trabajadores}
+        absences={absences}
+        onAbsencesChange={setAbsences}
       />
     </div>
   );
@@ -1182,29 +1438,39 @@ function ScheduleInput({
   label,
   dateValue,
   colorClass,
+  rowSpan = 1,
   isReadOnly = false,
+  onChange,
   onBlur,
 }: {
   routeNumero: number | null;
   label: string;
   dateValue: string;
   colorClass: string;
+  rowSpan?: number;
   isReadOnly?: boolean;
+  onChange: (value: string) => void;
   onBlur: (value: string) => void;
 }) {
   const dayValue = getDayFromDate(dateValue);
   const weekday = getWeekdayLabel(dateValue);
+
   const [draftValue, setDraftValue] = useState(dayValue);
-  const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
-    if (!isEditing) {
-      setDraftValue(dayValue);
-    }
-  }, [dayValue, isEditing]);
+    setDraftValue(dayValue);
+  }, [dayValue]);
+
+  const commitValue = () => {
+    if (isReadOnly) return;
+
+    const cleanValue = draftValue.replace(/\D/g, "").slice(0, 2);
+
+    onBlur(cleanValue);
+  };
 
   return (
-    <td className="px-4 py-3">
+    <td rowSpan={rowSpan} className="px-4 py-3 align-top">
       <div className="mx-auto flex max-w-28 flex-col items-center gap-1">
         <span className="h-4 text-[11px] font-semibold capitalize text-slate-500">
           {weekday || "\u00A0"}
@@ -1214,7 +1480,7 @@ function ScheduleInput({
           aria-label={`${label} ruta ${routeNumero ?? "N/A"}`}
           placeholder=""
           size="sm"
-          value={isEditing ? draftValue : dayValue}
+          value={draftValue}
           maxLength={2}
           inputMode="numeric"
           pattern="[0-9]*"
@@ -1226,40 +1492,22 @@ function ScheduleInput({
             }`,
             input: "text-center font-semibold text-slate-800",
           }}
-          onFocus={(event) => {
-            if (isReadOnly) return;
-
-            setIsEditing(true);
-            setDraftValue(dayValue);
-            event.currentTarget.select();
-          }}
           onValueChange={(nextValue) => {
             if (isReadOnly) return;
 
-            setDraftValue(nextValue.replace(/\D/g, "").slice(0, 2));
+            const cleanValue = nextValue.replace(/\D/g, "").slice(0, 2);
+
+            setDraftValue(cleanValue);
           }}
+          onBlur={commitValue}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
+              commitValue();
               event.currentTarget.blur();
             }
-          }}
-          onBlur={(event) => {
-            if (isReadOnly) return;
-
-            setIsEditing(false);
-            onBlur(event.target.value);
           }}
         />
       </div>
     </td>
-  );
-}
-
-function PreviewStat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-xl border border-blue-100 bg-white px-3 py-3 text-center shadow-sm">
-      <p className="text-xs font-medium text-slate-500">{label}</p>
-      <p className="mt-1 text-xl font-bold text-slate-900">{value}</p>
-    </div>
   );
 }
