@@ -28,6 +28,7 @@ import {
 import {
   getAssignmentCreatorCatalog,
   getAssignmentCreatorTemplate,
+  getChileanHolidays,
   saveAssignmentCreatorTemplate,
 } from "@/api/adm/api";
 import { useAuth } from "@/app/AuthContext";
@@ -116,6 +117,13 @@ interface CreatorTemplate {
   restrictions: RestrictionRule[];
 }
 
+interface ChileanHoliday {
+  date: string;
+  title?: string;
+  type?: string;
+  inalienable?: boolean;
+}
+
 interface AssignmentCreatorProps {
   onSaved?: () => void;
 }
@@ -135,19 +143,6 @@ const emptyTemplate = (): CreatorTemplate => ({
   leftoverWorkers: [],
   restrictions: [],
 });
-
-/*
-  Temporal.
-  Lo correcto después es traer feriados desde backend:
-  GET /api/feriados?year=2026
-*/
-const HOLIDAYS_BY_YEAR: Record<string, string[]> = {
-  "2026": [
-    // "2026-01-01",
-    // "2026-04-03",
-    // "2026-05-01",
-  ],
-};
 
 const nextMonthValue = () => {
   const today = new Date();
@@ -409,7 +404,14 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
 
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [holidayErrorMessage, setHolidayErrorMessage] = useState<string | null>(
+    null
+  );
+  const [holidaysByYear, setHolidaysByYear] = useState<Record<string, string[]>>(
+    {}
+  );
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
+  const [isLoadingHolidays, setIsLoadingHolidays] = useState(false);
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
   const [rotationSeed, setRotationSeed] = useState(1);
   const [absences, setAbsences] = useState<PlannedAbsenceRule[]>([]);
@@ -419,11 +421,23 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
     [monthValue]
   );
 
-  const holidayDates = useMemo(() => {
-    const year = monthValue.split("-")[0];
-
-    return HOLIDAYS_BY_YEAR[year] || [];
+  const selectedYear = useMemo(() => {
+    return Number(monthValue.split("-")[0]);
   }, [monthValue]);
+
+  const selectedYearKey = String(selectedYear);
+
+  const hasHolidayData = useMemo(
+    () => Object.prototype.hasOwnProperty.call(holidaysByYear, selectedYearKey),
+    [holidaysByYear, selectedYearKey]
+  );
+
+  const holidayDates = useMemo(() => {
+    return holidaysByYear[selectedYearKey] || [];
+  }, [holidaysByYear, selectedYearKey]);
+
+  const hasHolidayLoadBlocker =
+    isLoadingHolidays || Boolean(holidayErrorMessage) || !hasHolidayData;
 
   const calendarConfig = useMemo<CalendarRuleConfig>(
     () => ({
@@ -739,6 +753,72 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
   );
 
   useEffect(() => {
+    if (!token || !Number.isInteger(selectedYear)) return;
+
+    if (hasHolidayData) {
+      setHolidayErrorMessage(null);
+      return;
+    }
+
+    let isActive = true;
+
+    const loadHolidays = async () => {
+      setIsLoadingHolidays(true);
+      setHolidayErrorMessage(null);
+
+      try {
+        const response = await getChileanHolidays(
+          token,
+          selectedYear,
+          authenticatedFetch
+        );
+        const data = await parseJsonResponse(
+          response,
+          "No se pudieron cargar los feriados chilenos."
+        );
+        const holidays = Array.isArray(data?.holidays)
+          ? (data.holidays as ChileanHoliday[])
+          : [];
+        const holidayDatesForYear = holidays
+          .map((holiday) => holiday.date)
+          .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date))
+          .sort();
+
+        if (!holidayDatesForYear.length) {
+          throw new Error(
+            `No se encontraron feriados chilenos para ${selectedYear}.`
+          );
+        }
+
+        if (!isActive) return;
+
+        setHolidaysByYear((current) => ({
+          ...current,
+          [String(selectedYear)]: holidayDatesForYear,
+        }));
+      } catch (error) {
+        if (!isActive) return;
+
+        setHolidayErrorMessage(
+          error instanceof Error
+            ? error.message
+            : "No se pudieron cargar los feriados chilenos."
+        );
+      } finally {
+        if (isActive) {
+          setIsLoadingHolidays(false);
+        }
+      }
+    };
+
+    loadHolidays();
+
+    return () => {
+      isActive = false;
+    };
+  }, [authenticatedFetch, hasHolidayData, selectedYear, token]);
+
+  useEffect(() => {
     loadCatalog();
   }, [loadCatalog]);
 
@@ -902,6 +982,14 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
   };
 
   const generateProposal = () => {
+    if (hasHolidayLoadBlocker) {
+      setErrorMessage(
+        holidayErrorMessage ||
+          "Espera a que se carguen los feriados chilenos antes de generar propuesta."
+      );
+      return;
+    }
+
     if (!empresa) {
       setErrorMessage("Selecciona una empresa antes de generar propuesta.");
       return;
@@ -948,6 +1036,14 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
 
   const saveAssignmentPlan = async () => {
     if (!token || !empresa) return;
+
+    if (hasHolidayLoadBlocker) {
+      setErrorMessage(
+        holidayErrorMessage ||
+          "Espera a que se carguen los feriados chilenos antes de guardar."
+      );
+      return;
+    }
 
     if (isPastMonth) {
       setErrorMessage(
@@ -1071,6 +1167,23 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
             </div>
           </div>
 
+          {isLoadingHolidays ? (
+            <Card className="shrink-0 border border-blue-100 bg-blue-50">
+              <CardBody className="flex items-center gap-3 text-sm text-blue-700">
+                <Spinner size="sm" />
+                Cargando feriados chilenos para {selectedYear}.
+              </CardBody>
+            </Card>
+          ) : null}
+
+          {holidayErrorMessage ? (
+            <Card className="shrink-0 border border-danger-200 bg-danger-50">
+              <CardBody className="text-sm text-danger-700">
+                {holidayErrorMessage}
+              </CardBody>
+            </Card>
+          ) : null}
+
           {statusMessage ? (
             <Card className="shrink-0 border border-success-200 bg-success-50">
               <CardBody className="text-sm text-success-700">
@@ -1103,7 +1216,9 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
                     variant="flat"
                     startContent={<Wand2 size={16} />}
                     onPress={generateProposal}
-                    isDisabled={!empresa || isLoadingCatalog}
+                    isDisabled={
+                      !empresa || isLoadingCatalog || hasHolidayLoadBlocker
+                    }
                   >
                     Generar propuesta
                   </Button>
@@ -1119,7 +1234,7 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
                     Limpiar calendario
                   </Button>
 
-                  {isLoadingCatalog ? (
+                  {isLoadingCatalog || isLoadingHolidays ? (
                     <Spinner size="sm" />
                   ) : (
                     <CalendarDays size={18} />
@@ -1397,6 +1512,7 @@ export default function AssignmentCreator({ onSaved }: AssignmentCreatorProps) {
                 !empresa ||
                 isSavingTemplate ||
                 isPastMonth ||
+                hasHolidayLoadBlocker ||
                 !hasEveryRouteDates ||
                 hasScheduleErrors
               }
