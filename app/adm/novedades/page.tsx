@@ -28,9 +28,11 @@ import ATETracker from "@/components/News/ATETracker";
 interface Novedad {
   id: string;
   TipoNovedad: string;
-  Fotografia: string;
-  Lecturacorrecta: number;
-  Comentario: string;
+  Fotografia: string | string[] | null;
+  Lecturacorrecta?: number | null;
+  lecturaCaldera?: number | null;
+  lecturaCorrector?: number | null;
+  Comentario?: string | null;
   Fecha: string;
   direccion: string;
 }
@@ -247,6 +249,8 @@ export default function Admin_Novedades() {
       return (
         novedad.TipoNovedad?.toLowerCase().includes(query) ||
         novedad.Comentario?.toLowerCase().includes(query) ||
+        novedad.lecturaCaldera?.toString().includes(query) ||
+        novedad.lecturaCorrector?.toString().includes(query) ||
         novedad.direccion?.toLowerCase().includes(query) ||
         novedad.Fecha?.toLowerCase().includes(query)
       );

@@ -15,9 +15,11 @@ import AuthenticatedImage from "@/components/common/AuthenticatedImage";
 interface Novedad {
   id: string;
   TipoNovedad: string;
-  Fotografia: string;
-  Lecturacorrecta: number;
-  Comentario: string;
+  Fotografia: string | string[] | null;
+  Lecturacorrecta?: number | null;
+  lecturaCaldera?: number | null;
+  lecturaCorrector?: number | null;
+  Comentario?: string | null;
   Fecha: string;
   direccion: string;
   emisor?: Emisor;
@@ -51,6 +53,18 @@ export default function NovedadDrawer({
   tiponovedad,
 }: NovedadDrawerProps) {
   if (!novedad) return null; 
+  const fotos = Array.isArray(novedad.Fotografia)
+    ? novedad.Fotografia
+    : novedad.Fotografia
+      ? [novedad.Fotografia]
+      : [];
+  const imageFiles = fotos.filter((foto) => /\.(jpg|jpeg|png|gif)$/i.test(foto));
+  const hasCalderaCorrectorReading =
+    (novedad.lecturaCaldera !== null && novedad.lecturaCaldera !== undefined) ||
+    (novedad.lecturaCorrector !== null && novedad.lecturaCorrector !== undefined);
+  const formatReadingValue = (value?: number | null) =>
+    value === null || value === undefined ? "N/A" : value.toString();
+
   return (
     <Drawer
       isOpen={isOpen}
@@ -90,23 +104,39 @@ export default function NovedadDrawer({
 
                 <div className="flex items-center gap-2">
                   <FileText size={24} />
-                  <span>Comentario: {novedad.Comentario}</span>
+                  <span>Comentario: {novedad.Comentario || "N/A"}</span>
                 </div>
+                {hasCalderaCorrectorReading ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <FileText size={24} />
+                      <span>Lectura Caldera: {formatReadingValue(novedad.lecturaCaldera)}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <FileText size={24} />
+                      <span>Lectura Corrector: {formatReadingValue(novedad.lecturaCorrector)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <FileText size={24} />
+                    <span>Lectura: {formatReadingValue(novedad.Lecturacorrecta)}</span>
+                  </div>
+                )}
               </div>
             </CardBody>
           </Card>
-          {novedad.Fotografia &&
-            /\.(jpg|jpeg|png|gif)$/i.test(novedad.Fotografia) && (
-              <Card>
+          {imageFiles.map((foto, index) => (
+              <Card key={`${foto}-${index}`}>
                 <AuthenticatedImage
                   isZoomed
-                  alt="Fotografia"
-                  filePath={novedad.Fotografia}
+                  alt={`Fotografia ${index + 1}`}
+                  filePath={foto}
                   className="object-cover w-full max-h-[50vh]"
-                  downloadName="Fotografia"
+                  downloadName={`Fotografia-${index + 1}`}
                 />
               </Card>
-            )}
+          ))}
           {novedad.emisor && (
             <Card>
               <CardHeader className="flex justify-start items-center gap-4 shadow-md">

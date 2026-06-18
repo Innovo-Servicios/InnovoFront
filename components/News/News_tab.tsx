@@ -27,9 +27,11 @@ interface Emisor {
 interface Novedad {
   id: string;
   TipoNovedad: string;
-  Fotografia: string;
-  Lecturacorrecta: number;
-  Comentario: string;
+  Fotografia: string | string[] | null;
+  Lecturacorrecta?: number | null;
+  lecturaCaldera?: number | null;
+  lecturaCorrector?: number | null;
+  Comentario?: string | null;
   Fecha: string;
   direccion: string;
   emisor?: Emisor;
@@ -82,6 +84,26 @@ const NewsTab: React.FC<NewsTabProps> = ({
       month: "long",
       day: "numeric",
     });
+  };
+
+  const formatReadingValue = (value?: number | null) =>
+    value === null || value === undefined ? "N/A" : value.toString();
+
+  const renderReading = (novedad: Novedad) => {
+    const hasCalderaCorrectorReading =
+      (novedad.lecturaCaldera !== null && novedad.lecturaCaldera !== undefined) ||
+      (novedad.lecturaCorrector !== null && novedad.lecturaCorrector !== undefined);
+
+    if (hasCalderaCorrectorReading) {
+      return (
+        <div className="flex flex-col items-center gap-1 text-xs leading-tight">
+          <span>Caldera: {formatReadingValue(novedad.lecturaCaldera)}</span>
+          <span>Corrector: {formatReadingValue(novedad.lecturaCorrector)}</span>
+        </div>
+      );
+    }
+
+    return formatReadingValue(novedad.Lecturacorrecta);
   };
 
   // Mostrar spinner si no hay datos aún
@@ -149,12 +171,8 @@ const NewsTab: React.FC<NewsTabProps> = ({
                   }
                 </Chip>
               </TableCell>
-              <TableCell>{novedad.Comentario.length > 80 ? `${novedad.Comentario.slice(0, 80)}...` : novedad.Comentario || "N/A"}</TableCell>
-              <TableCell>
-                {novedad.Lecturacorrecta !== undefined
-                  ? novedad.Lecturacorrecta.toString()
-                  : "N/A"}
-              </TableCell>
+              <TableCell>{novedad.Comentario && novedad.Comentario.length > 80 ? `${novedad.Comentario.slice(0, 80)}...` : novedad.Comentario || "N/A"}</TableCell>
+              <TableCell>{renderReading(novedad)}</TableCell>
               <TableCell>
                 <div className="flex items-center text-center justify-center gap-2">
                   <Calendar size={16} />
