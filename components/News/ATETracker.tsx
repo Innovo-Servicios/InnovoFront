@@ -37,9 +37,11 @@ import {
   CalendarDays,
   RotateCcw,
   Info,
+  Route as RouteIcon,
 } from "lucide-react";
 import { parseDate, CalendarDate } from "@internationalized/date";
 import { I18nProvider } from "@react-aria/i18n";
+import { sileo } from "sileo";
 import { URL } from "@/config/config";
 import { useAuth } from "@/app/AuthContext";
 import AuthenticatedImage from "@/components/common/AuthenticatedImage";
@@ -51,9 +53,11 @@ interface ATE {
   respuestaComentario?: string | null;
   Lecturacorrecta?: number | null;
   foto: string;
-  tipo: { _id: string; nombre: string };
-  direccion: { _id: string; nombre: string };
-  Trabajador: { _id: string; nombre: string };
+  tipo: { _id: string; nombre: string } | null;
+  direccion: { _id: string; nombre: string } | null;
+  Trabajador: { _id: string; nombre: string } | null;
+  ruta: number | null;
+  sector: string | null;
   fecha_ate: string;
   fotografia: string;
   estado: boolean;
@@ -65,6 +69,7 @@ type DateRangeValue = {
 };
 
 type QuickDateFilter = "today" | "last7" | "month" | "custom";
+type AteTypeFilter = "all" | "lectura" | "reparto";
 
 const toCalendarDate = (date: Date) => {
   return parseDate(date.toISOString().split("T")[0]);
@@ -79,6 +84,45 @@ const normalizeAteType = (value?: string | null) =>
 
 const isAteLecturaType = (value?: string | null) =>
   normalizeAteType(value) === normalizeAteType("Atención Especial-Lectura");
+
+const isAteRepartoType = (value?: string | null) =>
+  normalizeAteType(value) === normalizeAteType("Atención Especial-Reparto");
+
+const getAteTypeStyles = (value?: string | null) => {
+  if (isAteLecturaType(value)) {
+    return {
+      accent: "border-sky-300",
+      surface: "bg-sky-50",
+      icon: "bg-sky-100 text-sky-700",
+      chip: "bg-sky-100 text-sky-800",
+      progress: "bg-sky-500",
+    };
+  }
+
+  if (isAteRepartoType(value)) {
+    return {
+      accent: "border-orange-300",
+      surface: "bg-orange-50",
+      icon: "bg-orange-100 text-orange-700",
+      chip: "bg-orange-100 text-orange-800",
+      progress: "bg-orange-500",
+    };
+  }
+
+  return {
+    accent: "border-violet-300",
+    surface: "bg-violet-50",
+    icon: "bg-violet-100 text-violet-700",
+    chip: "bg-violet-100 text-violet-800",
+    progress: "bg-violet-500",
+  };
+};
+
+const formatRouteSector = (ate: ATE) => {
+  const route = ate.ruta ?? "Sin ruta";
+  const sector = ate.sector ?? "Sin sector";
+  return `Ruta ${route} · Sector ${sector}`;
+};
 
 const formatLecturaCorrecta = (lectura?: number | null) =>
   lectura === null || lectura === undefined ? "Sin lectura" : lectura.toString();
@@ -119,6 +163,7 @@ export default function ATETracker() {
 
   const [ates, setAtes] = useState<ATE[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [ateTypeFilter, setAteTypeFilter] = useState<AteTypeFilter>("all");
 
   const [activeTab, setActiveTab] = useState<string>("stats");
 
@@ -283,6 +328,7 @@ export default function ATETracker() {
 
   const resetAteFilters = () => {
     setSearchTerm("");
+    setAteTypeFilter("all");
     const range = getCurrentMonthRange();
     setQuickDateFilter("month");
     changeListAte(range);
@@ -290,19 +336,27 @@ export default function ATETracker() {
 
   const filteredAtes = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-
-    if (!query) return ates;
-
     return ates.filter((ate) => {
+      const typeName = ate.tipo?.nombre || "";
+      const matchesType =
+        ateTypeFilter === "all" ||
+        (ateTypeFilter === "lectura" && isAteLecturaType(typeName)) ||
+        (ateTypeFilter === "reparto" && isAteRepartoType(typeName));
+
+      if (!matchesType) return false;
+      if (!query) return true;
+
       return (
-        ate.tipo.nombre.toLowerCase().includes(query) ||
+        typeName.toLowerCase().includes(query) ||
         (ate.Trabajador?.nombre ?? "").toLowerCase().includes(query) ||
-        ate.direccion.nombre.toLowerCase().includes(query) ||
+        (ate.direccion?.nombre ?? "").toLowerCase().includes(query) ||
+        String(ate.ruta ?? "").includes(query) ||
+        String(ate.sector ?? "").includes(query) ||
         ate.fecha_ate.toLowerCase().includes(query) ||
         (ate.comentario || "").toLowerCase().includes(query)
       );
     });
-  }, [searchTerm, ates]);
+  }, [ateTypeFilter, searchTerm, ates]);
 
   const getATETypeIcon = (type: string) => {
     switch (type) {
@@ -327,7 +381,7 @@ export default function ATETracker() {
       totalAtes === 0 ? 0 : Math.round((completedAtes / totalAtes) * 100);
 
     const typeStats = filteredAtes.reduce((acc, ate) => {
-      const typeName = ate.tipo.nombre;
+      const typeName = ate.tipo?.nombre || "Sin tipo";
         
       if (!acc[typeName]) {
         acc[typeName] = {
@@ -370,12 +424,18 @@ export default function ATETracker() {
 
   const handleDownload = async () => {
     if (!dateRange.start || !dateRange.end || selectedType === "") {
-      alert("Seleccione un rango de fechas y un tipo de datos");
+      sileo.warning({
+        title: "Faltan filtros para descargar",
+        description: "Selecciona un rango de fechas y un tipo de datos.",
+      });
       return;
     }
 
     if (!token) {
-      alert("Sesión expirada. Inicie sesión nuevamente.");
+      sileo.warning({
+        title: "Sesión expirada",
+        description: "Inicia sesión nuevamente para continuar.",
+      });
       return;
     }
 
@@ -384,7 +444,7 @@ export default function ATETracker() {
       Authorization: `Bearer ${token}`,
     };
 
-    try {
+    const downloadRequest = async () => {
       if (selectedType === "ate") {
         const response = await authenticatedFetch(`${URL}/excel/ate`, {
           method: "POST",
@@ -437,6 +497,24 @@ export default function ATETracker() {
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
       }
+    };
+
+    try {
+      await sileo.promise(downloadRequest(), {
+        loading: {
+          title: "Preparando descarga",
+          description: "Estamos generando el archivo solicitado.",
+        },
+        success: {
+          title: "Descarga preparada",
+          description: "El archivo comenzó a descargarse.",
+        },
+        error: (error) => ({
+          title: "No se pudo generar la descarga",
+          description:
+            error instanceof Error ? error.message : "Inténtalo nuevamente.",
+        }),
+      });
     } catch (error) {
       console.error("Error al descargar las estadísticas:", error);
     }
@@ -444,11 +522,14 @@ export default function ATETracker() {
 
   const sendNovedad = async () => {
     if (!token) {
-      alert("Sesión expirada. Inicie sesión nuevamente.");
+      sileo.warning({
+        title: "Sesión expirada",
+        description: "Inicia sesión nuevamente para continuar.",
+      });
       return;
     }
 
-    try {
+    const sendRequest = async () => {
       const response = await authenticatedFetch(`${URL}/novedad/correo`, {
         method: "POST",
         headers: {
@@ -461,10 +542,23 @@ export default function ATETracker() {
       });
 
       if (!response.ok) {
-        throw new Error("Error al enviar las novedades");
+        throw new Error("El servidor no pudo enviar las novedades.");
       }
+    };
 
-      alert("Novedades enviadas correctamente");
+    try {
+      await sileo.promise(sendRequest(), {
+        loading: { title: "Enviando novedades" },
+        success: {
+          title: "Novedades enviadas",
+          description: "El correo se procesó correctamente.",
+        },
+        error: (error) => ({
+          title: "No se pudieron enviar las novedades",
+          description:
+            error instanceof Error ? error.message : "Inténtalo nuevamente.",
+        }),
+      });
     } catch (error) {
       console.error("Error al enviar las novedades:", error);
     }
@@ -472,11 +566,14 @@ export default function ATETracker() {
 
   const sendVerificacion = async () => {
     if (!token) {
-      alert("Sesión expirada. Inicie sesión nuevamente.");
+      sileo.warning({
+        title: "Sesión expirada",
+        description: "Inicia sesión nuevamente para continuar.",
+      });
       return;
     }
 
-    try {
+    const sendRequest = async () => {
       const response = await authenticatedFetch(`${URL}/novedad/verificacion`, {
         method: "POST",
         headers: {
@@ -489,10 +586,23 @@ export default function ATETracker() {
       });
 
       if (!response.ok) {
-        throw new Error("Error al enviar las verificaciones");
+        throw new Error("El servidor no pudo enviar las verificaciones.");
       }
+    };
 
-      alert("Verificaciones enviadas correctamente");
+    try {
+      await sileo.promise(sendRequest(), {
+        loading: { title: "Enviando verificaciones" },
+        success: {
+          title: "Verificaciones enviadas",
+          description: "El correo se procesó correctamente.",
+        },
+        error: (error) => ({
+          title: "No se pudieron enviar las verificaciones",
+          description:
+            error instanceof Error ? error.message : "Inténtalo nuevamente.",
+        }),
+      });
     } catch (error) {
       console.error("Error al enviar las verificaciones:", error);
     }
@@ -500,14 +610,17 @@ export default function ATETracker() {
 
   const SendData = async () => {
     if (!selectedSendDate || selectedTypeSend === "") {
-      alert("Seleccione una fecha y un tipo de datos");
+      sileo.warning({
+        title: "Faltan datos para enviar",
+        description: "Selecciona una fecha y un tipo de datos.",
+      });
       return;
     }
 
     if (selectedTypeSend === "novedadSend") {
-      sendNovedad();
+      await sendNovedad();
     } else {
-      sendVerificacion();
+      await sendVerificacion();
     }
   };
 
@@ -539,7 +652,7 @@ export default function ATETracker() {
         <div className="flex w-full flex-col gap-3">
           <Input
             aria-label="Buscar ATE"
-            placeholder="Buscar por trabajador, dirección, tipo o comentario..."
+            placeholder="Buscar por trabajador, dirección, ruta, sector, tipo o comentario..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             variant="bordered"
@@ -549,6 +662,58 @@ export default function ATETracker() {
               input: "text-sm",
             }}
           />
+
+          <div
+            className="flex flex-wrap items-center gap-2"
+            role="group"
+            aria-label="Filtrar ATE por tipo"
+          >
+            <span className="mr-1 text-xs font-semibold uppercase text-slate-500">
+              Tipo
+            </span>
+
+            <Button
+              size="sm"
+              variant="flat"
+              className={
+                ateTypeFilter === "all"
+                  ? "bg-slate-800 text-white"
+                  : "bg-slate-100 text-slate-700"
+              }
+              startContent={<FileTextIcon size={15} />}
+              onPress={() => setAteTypeFilter("all")}
+            >
+              Todas
+            </Button>
+
+            <Button
+              size="sm"
+              variant="flat"
+              className={
+                ateTypeFilter === "lectura"
+                  ? "bg-sky-600 text-white"
+                  : "bg-sky-50 text-sky-700"
+              }
+              startContent={<BookOpenIcon size={15} />}
+              onPress={() => setAteTypeFilter("lectura")}
+            >
+              Lectura
+            </Button>
+
+            <Button
+              size="sm"
+              variant="flat"
+              className={
+                ateTypeFilter === "reparto"
+                  ? "bg-orange-600 text-white"
+                  : "bg-orange-50 text-orange-700"
+              }
+              startContent={<TruckIcon size={15} />}
+              onPress={() => setAteTypeFilter("reparto")}
+            >
+              Reparto
+            </Button>
+          </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <I18nProvider locale="es-CL">
@@ -671,7 +836,7 @@ export default function ATETracker() {
                   </div>
 
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                    <Card className="border border-slate-100 shadow-sm">
+                    <Card className="border border-blue-200 bg-blue-50 shadow-sm">
                       <CardBody>
                         <div className="flex items-center justify-between">
                           <div>
@@ -688,7 +853,7 @@ export default function ATETracker() {
                       </CardBody>
                     </Card>
 
-                    <Card className="border border-slate-100 shadow-sm">
+                    <Card className="border border-emerald-200 bg-emerald-50 shadow-sm">
                       <CardBody>
                         <div className="flex items-center justify-between">
                           <div>
@@ -708,7 +873,7 @@ export default function ATETracker() {
                       </CardBody>
                     </Card>
 
-                    <Card className="border border-slate-100 shadow-sm">
+                    <Card className="border border-amber-200 bg-amber-50 shadow-sm">
                       <CardBody>
                         <div className="flex items-center justify-between">
                           <div>
@@ -720,7 +885,7 @@ export default function ATETracker() {
                             </p>
                           </div>
 
-                          <ClockIcon size={24} className="text-yellow-500" />
+                          <ClockIcon size={24} className="text-amber-600" />
                         </div>
                       </CardBody>
                     </Card>
@@ -783,15 +948,20 @@ export default function ATETracker() {
                           stats.total === 0
                             ? 0
                             : Math.round((stats.completed / stats.total) * 100);
+                        const typeStyles = getAteTypeStyles(type);
                       
                         return (
                           <div
                             key={type}
-                            className="rounded-xl bg-slate-50 px-3 py-3"
+                            className={`rounded-xl border px-3 py-3 ${typeStyles.accent} ${typeStyles.surface}`}
                           >
                             <div className="flex items-center justify-between gap-3">
                               <div className="flex min-w-0 items-center gap-2">
-                                {getATETypeIcon(type)}
+                                <div
+                                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${typeStyles.icon}`}
+                                >
+                                  {getATETypeIcon(type)}
+                                </div>
                         
                                 <div className="min-w-0">
                                   <p className="truncate text-sm font-medium text-slate-800">
@@ -805,14 +975,18 @@ export default function ATETracker() {
                                 </div>
                               </div>
                         
-                              <Chip size="sm" variant="flat">
+                              <Chip
+                                size="sm"
+                                variant="flat"
+                                className={typeStyles.chip}
+                              >
                                 {stats.total}
                               </Chip>
                             </div>
                         
                             <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200">
                               <div
-                                className="h-full rounded-full bg-green-500"
+                                className={`h-full rounded-full ${typeStyles.progress}`}
                                 style={{ width: `${completionPercent}%` }}
                               />
                             </div>
@@ -883,12 +1057,17 @@ export default function ATETracker() {
             <ScrollShadow hideScrollBar className="h-full w-full px-3 py-4">
               {filteredAtes.length > 0 ? (
                 <Accordion className="scrollbar-hide" variant="splitted">
-                  {filteredAtes.map((ate) => (
-                    <AccordionItem
+                  {filteredAtes.map((ate) => {
+                    const typeName = ate.tipo?.nombre || "Sin tipo";
+                    const typeStyles = getAteTypeStyles(typeName);
+
+                    return (
+                      <AccordionItem
                       key={ate.id}
                       id="ate"
                       aria-label="ATE"
                       classNames={{
+                        base: `border-l-4 ${typeStyles.accent}`,
                         trigger: "w-full min-w-0",
                         titleWrapper: "w-full min-w-0",
                         title: "w-full min-w-0",
@@ -896,14 +1075,16 @@ export default function ATETracker() {
                       title={
                         <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_6rem] items-center gap-3">
                           <div className="flex min-w-0 flex-1 items-center gap-3">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
-                              {getATETypeIcon(ate.tipo.nombre)}
+                            <div
+                              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${typeStyles.icon}`}
+                            >
+                              {getATETypeIcon(typeName)}
                             </div>
 
                             <div className="min-w-0 flex-1 overflow-hidden">
                               <div className="flex min-w-0 items-center gap-2">
                                 <span className="truncate font-semibold text-slate-900">
-                                  {getShortATEType(ate.tipo.nombre)}
+                                  {getShortATEType(typeName)}
                                 </span>
 
                                 <Chip
@@ -917,7 +1098,11 @@ export default function ATETracker() {
                               </div>
 
                               <p className="truncate text-xs text-slate-500">
-                                {ate.Trabajador?.nombre ?? "Sin asignar"} · {ate.direccion.nombre}
+                                {ate.Trabajador?.nombre ?? "Sin asignar"} · {ate.direccion?.nombre ?? "Sin dirección"}
+                              </p>
+
+                              <p className="truncate text-xs font-semibold text-slate-600">
+                                {formatRouteSector(ate)}
                               </p>
                             </div>
                           </div>
@@ -933,7 +1118,9 @@ export default function ATETracker() {
                         </div>
                       }
                     >
-                      <div className="space-y-3 rounded-xl bg-slate-50 p-3">
+                      <div
+                        className={`space-y-3 rounded-xl border p-3 ${typeStyles.accent} ${typeStyles.surface}`}
+                      >
                         <div className="flex items-start gap-2 text-sm text-slate-600">
                           <CalendarIcon size={18} />
                           <span>{new Date(ate.fecha_ate).toLocaleString()}</span>
@@ -974,7 +1161,12 @@ export default function ATETracker() {
 
                         <div className="flex items-start gap-2 text-sm text-slate-600">
                           <MapPinIcon size={18} />
-                          <span>{ate.direccion.nombre}</span>
+                          <span>{ate.direccion?.nombre ?? "Sin dirección"}</span>
+                        </div>
+
+                        <div className="flex items-start gap-2 text-sm font-semibold text-slate-700">
+                          <RouteIcon size={18} />
+                          <span>{formatRouteSector(ate)}</span>
                         </div>
 
                         {ate.comentario && (
@@ -1023,8 +1215,9 @@ export default function ATETracker() {
                           </div>
                         )}
                       </div>
-                    </AccordionItem>
-                  ))}
+                      </AccordionItem>
+                    );
+                  })}
                 </Accordion>
               ) : (
                 <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">

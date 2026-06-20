@@ -23,6 +23,7 @@ import {
 import { useEffect } from "react";
 import { URL } from "@/config/config";
 import { useAuth } from "@/app/AuthContext";
+import { sileo } from "sileo";
 interface Worker {
   Rut: string;
   Nombre: string;
@@ -70,6 +71,7 @@ export default function WorkerModal({
   const [correo, setCorreo] = useState<string>("");
   const [cargo, setCargo] = useState<string>("");
   const [Mod,setMod] = useState<boolean>(false);
+  const [isSaving, setIsSaving] = useState(false);
   const { token, socket, authenticatedFetch } = useAuth();
   const fetchWorkerDetails = async () => {
     const data = {
@@ -103,21 +105,38 @@ export default function WorkerModal({
         Nuevonombre: nombre,
         Nuevocorreo: correo,
       };
-      const response = await authenticatedFetch(`${URL}/trabajador/modificardatostrabajador`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if(response.ok){
-        alert("Datos modificados correctamente");
-        setMod(!Mod);
-        if(socket){
-          socket.emit("updateWorker");
+      const updateRequest = async () => {
+        const response = await authenticatedFetch(`${URL}/trabajador/modificardatostrabajador`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        });
+
+        if (!response.ok) {
+          throw new Error("El servidor no pudo guardar los cambios.");
         }
-      }
-      else{
-        alert("Error al modificar los datos del trabajador");
-        console.error("Error al modificar los datos del trabajador");
+      };
+
+      setIsSaving(true);
+      try {
+        await sileo.promise(updateRequest(), {
+          loading: { title: "Guardando cambios" },
+          success: {
+            title: "Trabajador actualizado",
+            description: "Los datos se guardaron correctamente.",
+          },
+          error: (error) => ({
+            title: "No se pudo actualizar el trabajador",
+            description:
+              error instanceof Error ? error.message : "Inténtalo nuevamente.",
+          }),
+        });
+        setMod(false);
+        socket?.emit("updateWorker");
+      } catch (error) {
+        console.error("Error al modificar los datos del trabajador:", error);
+      } finally {
+        setIsSaving(false);
       }
     }else{
       setMod(!Mod);
@@ -129,7 +148,17 @@ export default function WorkerModal({
         <ModalContent>
             <ModalHeader className="flex justify-between items-center px-10">
             <h1 className="flex-grow text-center">{worker.Nombre}</h1>
-            <Button variant="flat" size="md" color={Mod ? "success" : "warning"} className="ml-auto" onPress={handlerMod}>{Mod ? "Guardar" : "Modificar"}</Button>
+            <Button
+              variant="flat"
+              size="md"
+              color={Mod ? "success" : "warning"}
+              className="ml-auto"
+              onPress={handlerMod}
+              isLoading={isSaving}
+              isDisabled={isSaving}
+            >
+              {isSaving ? "Guardando..." : Mod ? "Guardar" : "Modificar"}
+            </Button>
             </ModalHeader>
           <ModalBody>
             <div className="space-y-4 p-8">

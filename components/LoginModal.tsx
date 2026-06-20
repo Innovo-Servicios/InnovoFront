@@ -14,6 +14,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { URL } from "../config/config";
 import { useRouter } from "next/navigation";
 import { useRut } from "react-rut-formatter";
+import { sileo } from "sileo";
 import { useAuth } from "@/app/AuthContext";
 
 interface LoginModalProps {
@@ -29,6 +30,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
   const [rutTouched, setRutTouched] = useState(false);
   const [passwordTouched, setPasswordTouched] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const router = useRouter();
   const { setToken } = useAuth();
@@ -75,7 +77,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
       return;
     }
   
-    try {
+    const loginRequest = async () => {
       const dato = {
         rut: rut.raw,
         clave: password,
@@ -93,25 +95,49 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
       });
     
       console.log("Status:", response.status);
-    
-      if (response.ok) {
-        const data = await response.json();
-      
-        console.log("Login correcto:", data);
-      
-        setToken(data.token);
-        resetForm();
-        onClose();
-        router.push("/adm");
-        return;
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.log("Respuesta error backend:", errorText);
+        throw new Error(
+          response.status === 401
+            ? "El RUT o la contraseña no son correctos."
+            : "El servidor rechazó el inicio de sesión."
+        );
       }
-    
-      const errorText = await response.text();
-      console.log("Respuesta error backend:", errorText);
-      alert("Credenciales incorrectas");
+
+      return response.json();
+    };
+
+    setIsLoggingIn(true);
+    try {
+      const data = await sileo.promise(loginRequest(), {
+        loading: {
+          title: "Iniciando sesión",
+          description: "Estamos verificando tus credenciales.",
+        },
+        success: {
+          title: "Sesión iniciada",
+          description: "Bienvenido al panel de administración.",
+        },
+        error: (error) => ({
+          title: "No se pudo iniciar sesión",
+          description:
+            error instanceof Error
+              ? error.message
+              : "Revisa tus credenciales e inténtalo nuevamente.",
+        }),
+      });
+
+      console.log("Login correcto:", data);
+      setToken(data.token);
+      resetForm();
+      onClose();
+      router.push("/adm");
     } catch (error) {
       console.error("Error de request:", error);
-      alert("No se pudo conectar con el servidor. Revisa la URL del backend o CORS.");
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
@@ -178,8 +204,14 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
               type={isVisible ? "text" : "password"}
             />
 
-            <Button type="submit" color="primary" className="w-full">
-              Ingresar
+            <Button
+              type="submit"
+              color="primary"
+              className="w-full"
+              isLoading={isLoggingIn}
+              isDisabled={isLoggingIn}
+            >
+              {isLoggingIn ? "Ingresando..." : "Ingresar"}
             </Button>
           </form>
         </ModalBody>

@@ -20,6 +20,7 @@ import {
   UserRoundCheck,
   UserRoundX,
 } from "lucide-react";
+import { sileo } from "sileo";
 import { URL } from "@/config/config";
 import { useAuth } from "@/app/AuthContext";
 
@@ -145,11 +146,27 @@ export default function NotificationModal({
     fetchNotificationDetails();
   }, [fetchNotificationDetails]);
 
+  const copyRegeneratedCode = async (code: string) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      sileo.success({
+        title: "Código copiado",
+        description: "Ya puedes compartirlo con el trabajador.",
+      });
+    } catch (error) {
+      console.error("No se pudo copiar el código:", error);
+      sileo.error({
+        title: "No se pudo copiar",
+        description: "Copia el código manualmente desde el aviso.",
+      });
+    }
+  };
+
   const handleRegenerateCode = async (item: ValidationItem) => {
     if (!token || !notificationId || !item.trabajadorId) return;
 
     setRegeneratingWorker(item.trabajadorId);
-    try {
+    const regenerateRequest = async () => {
       const response = await authenticatedFetch(
         `${URL}/notificaciones/validacion/regenerarCodigo`,
         {
@@ -165,19 +182,43 @@ export default function NotificationModal({
 
       if (!response.ok) {
         const message = await response.text();
-        alert(message || "No se pudo regenerar el código.");
-        return;
+        throw new Error(message || "No se pudo regenerar el código.");
       }
 
       const payload = await response.json();
-      alert(
-        `Nuevo código para ${payload.codigo?.nombre || item.nombre}: ${
-          payload.codigo?.code || "-"
-        }`
-      );
       await fetchNotificationDetails();
+      return payload;
+    };
+
+    try {
+      await sileo.promise(regenerateRequest(), {
+        loading: {
+          title: "Regenerando código",
+          description: `Creando un nuevo código para ${item.nombre}.`,
+        },
+        success: {
+          title: "Código regenerado",
+        },
+        action: (payload) => {
+          const code = String(payload.codigo?.code || "-");
+          return {
+            title: "Código regenerado",
+            description: `${payload.codigo?.nombre || item.nombre}: ${code}`,
+            duration: 12000,
+            button: {
+              title: "Copiar",
+              onClick: () => void copyRegeneratedCode(code),
+            },
+          };
+        },
+        error: (error) => ({
+          title: "No se pudo regenerar el código",
+          description:
+            error instanceof Error ? error.message : "Inténtalo nuevamente.",
+        }),
+      });
     } catch (error) {
-      alert("No se pudo regenerar el código.");
+      console.error("No se pudo regenerar el código:", error);
     } finally {
       setRegeneratingWorker(null);
     }

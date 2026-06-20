@@ -1,9 +1,12 @@
+"use client";
+
 import { MapContainer, TileLayer, Popup, Marker, useMapEvent, Polyline} from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.label/dist/leaflet.label.css'; // Importa los estilos de Leaflet.Label
 import { useState } from 'react';
 import { LatLngTuple, LeafletEventHandlerFn } from 'leaflet';
+import { sileo } from 'sileo';
 
 interface CustomMarkerProps {
   position: LatLngTuple;
@@ -78,7 +81,10 @@ export default function Map() {
   }
   const saveMarkers = () => {
     console.log(markers);
-    alert('Guardado');
+    sileo.success({
+      title: 'Mapa guardado',
+      description: `${markers.length} puntos quedaron preparados.`,
+    });
   }
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>

@@ -56,6 +56,7 @@ import {
   UserRoundX,
 } from "lucide-react";
 import { parseDate } from "@internationalized/date";
+import { sileo } from "sileo";
 interface WorkerDetails {
   Nombre: string;
   Rut: string;
@@ -212,7 +213,11 @@ export default function Drawer_Worker({
     }
   };
   const handleDeleteDocuments = async (id: string, rut: string) => {
-    if (window.confirm("¿Está seguro de que desea eliminar este documento?")) {
+    if (!window.confirm("¿Está seguro de que desea eliminar este documento?")) {
+      return;
+    }
+
+    const deleteRequest = async () => {
       const response = await authenticatedFetch(`${URL}/documento/deleteDocumento`, {
         method: "POST",
         headers: {
@@ -220,17 +225,38 @@ export default function Drawer_Worker({
         },
         body: JSON.stringify({ token, id, rut }),
       });
-      if (response.ok) {
-        fetchWorker();
-      } else {
-        console.error("Error al eliminar el documento:", response.statusText);
+
+      if (!response.ok) {
+        throw new Error("El servidor no pudo eliminar el documento.");
       }
+
+      await fetchWorker();
+    };
+
+    try {
+      await sileo.promise(deleteRequest(), {
+        loading: { title: "Eliminando documento" },
+        success: {
+          title: "Documento eliminado",
+          description: "El listado del trabajador fue actualizado.",
+        },
+        error: (error) => ({
+          title: "No se pudo eliminar el documento",
+          description:
+            error instanceof Error ? error.message : "Inténtalo nuevamente.",
+        }),
+      });
+    } catch (error) {
+      console.error("Error al eliminar el documento:", error);
     }
   };
   const handleSendHelp = async () => {
     if (!worker) return;
     if (!sectorSelected) {
-      alert("Seleccione un sector.");
+      sileo.warning({
+        title: "Selecciona un sector",
+        description: "El sector es necesario para asignar el apoyo.",
+      });
       return;
     }
     const data = {
@@ -239,43 +265,85 @@ export default function Drawer_Worker({
       fechainicio: dateRange.start.toString(),
       fechafin: dateRange.end.toString(),
     };
-    const response = await authenticatedFetch(`${URL}/asignacion/asignarApoyo`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(data),
-    });
-    if (response.ok) {
-      alert("Apoyo asignado correctamente.");
-      if (socket) {
-        socket.emit("updateWorker");
+    const assignRequest = async () => {
+      const response = await authenticatedFetch(`${URL}/asignacion/asignarApoyo`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        throw new Error("El servidor no pudo asignar el apoyo.");
       }
-    } else {
-      alert("Error al asignar el apoyo.");
-      console.error("Error al asignar el apoyo:", response.statusText);
+
+      socket?.emit("updateWorker");
+    };
+
+    try {
+      await sileo.promise(assignRequest(), {
+        loading: { title: "Asignando apoyo" },
+        success: {
+          title: "Apoyo asignado",
+          description: "El trabajador y su planificación fueron actualizados.",
+        },
+        error: (error) => ({
+          title: "No se pudo asignar el apoyo",
+          description:
+            error instanceof Error ? error.message : "Inténtalo nuevamente.",
+        }),
+      });
+    } catch (error) {
+      console.error("Error al asignar el apoyo:", error);
     }
   };
   const handleSendDocument = async () => {
     if (!worker || !token) return;
+    if (!file || !tipoDocumentosSelected) {
+      sileo.warning({
+        title: "Falta información del documento",
+        description: "Selecciona un archivo y su tipo antes de subirlo.",
+      });
+      return;
+    }
+
     const formData = new FormData();
-    formData.append("file", file as Blob);
+    formData.append("file", file);
     formData.append("token", token);
     formData.append("objetivo", worker.Rut);
     formData.append("tipo", tipoDocumentosSelected);
-    const response = await authenticatedFetch(`${URL}/documento/crearDocumento`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: formData,
-    });
-    if (response.ok) {
-      alert("Documento subido correctamente.");
-      fetchWorker();
-    } else {
-      alert("Error al subir el documento.");
-      console.error("Error al subir el documento:", response.statusText);
+    const uploadRequest = async () => {
+      const response = await authenticatedFetch(`${URL}/documento/crearDocumento`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("El servidor no pudo guardar el documento.");
+      }
+
+      await fetchWorker();
+    };
+
+    try {
+      await sileo.promise(uploadRequest(), {
+        loading: { title: "Subiendo documento" },
+        success: {
+          title: "Documento subido",
+          description: "Ya está disponible en la ficha del trabajador.",
+        },
+        error: (error) => ({
+          title: "No se pudo subir el documento",
+          description:
+            error instanceof Error ? error.message : "Inténtalo nuevamente.",
+        }),
+      });
+    } catch (error) {
+      console.error("Error al subir el documento:", error);
     }
   };
   const handlerMod = async () => {
@@ -286,7 +354,10 @@ export default function Drawer_Worker({
         correo === worker.correo &&
         cargo === worker.cargo
       ) {
-        alert("No se realizaron cambios.");
+        sileo.info({
+          title: "Sin cambios pendientes",
+          description: "Los datos del trabajador ya están actualizados.",
+        });
         setMod(!Mod);
         return;
       }
@@ -297,31 +368,47 @@ export default function Drawer_Worker({
         Nuevocorreo: correo,
         Nuevocargo: cargo,
       };
-      const response = await authenticatedFetch(
-        `${URL}/trabajador/modificardatostrabajador`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data),
+      const updateRequest = async () => {
+        const response = await authenticatedFetch(
+          `${URL}/trabajador/modificardatostrabajador`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data),
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error("El servidor no pudo guardar los cambios.");
         }
-      );
-      if (response.ok) {
-        alert("Datos modificados correctamente");
-        setMod(!Mod);
-        if (socket) {
-          socket.emit("updateWorker");
-        }
-      } else {
-        alert("Error al modificar los datos del trabajador");
-        console.error("Error al modificar los datos del trabajador");
+      };
+
+      try {
+        await sileo.promise(updateRequest(), {
+          loading: { title: "Guardando cambios" },
+          success: {
+            title: "Trabajador actualizado",
+            description: "Los datos se guardaron correctamente.",
+          },
+          error: (error) => ({
+            title: "No se pudo actualizar el trabajador",
+            description:
+              error instanceof Error ? error.message : "Inténtalo nuevamente.",
+          }),
+        });
+        setMod(false);
+        socket?.emit("updateWorker");
+      } catch (error) {
+        console.error("Error al modificar los datos del trabajador:", error);
       }
     } else {
       setMod(!Mod);
     }
   };
   const handleDelete = async (rut:string) => {
-      if (!token) return;
-      if (window.confirm("¿Está seguro de que desea eliminar este trabajador?")) {
+    if (!token) return;
+    if (window.confirm("¿Está seguro de que desea eliminar este trabajador?")) {
+      const deleteRequest = async () => {
         const res = await authenticatedFetch(`${URL}/trabajador/eliminartrabajador`, {
           method: "DELETE",
           headers: {
@@ -329,15 +416,32 @@ export default function Drawer_Worker({
           },
           body: JSON.stringify({ token, rut }), // Incluye el token y el rut en el cuerpo de la solicitud
         });
-  
-        if (res.ok) {
-          alert("Trabajador eliminado correctamente.");
-          if (socket) {
-            socket.emit("updateWorker");
-          }
+
+        if (!res.ok) {
+          throw new Error("El servidor no pudo eliminar el trabajador.");
         }
+
+        socket?.emit("updateWorker");
+      };
+
+      try {
+        await sileo.promise(deleteRequest(), {
+          loading: { title: "Eliminando trabajador" },
+          success: {
+            title: "Trabajador eliminado",
+            description: "El listado fue actualizado correctamente.",
+          },
+          error: (error) => ({
+            title: "No se pudo eliminar el trabajador",
+            description:
+              error instanceof Error ? error.message : "Inténtalo nuevamente.",
+          }),
+        });
+      } catch (error) {
+        console.error("Error al eliminar el trabajador:", error);
       }
-    };
+    }
+  };
   return (
     <Drawer
       isOpen={isOpen}

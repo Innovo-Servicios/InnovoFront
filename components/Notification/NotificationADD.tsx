@@ -33,6 +33,7 @@ import {
   parseAbsoluteToLocal,
 } from "@internationalized/date";
 import { I18nProvider } from "@react-aria/i18n";
+import { sileo } from "sileo";
 import { useAuth } from "../../app/AuthContext";
 import { URL } from "../../config/config";
 
@@ -77,6 +78,7 @@ export default function NotificationADD() {
   const [requiresSignature, setRequiresSignature] = useState(false);
   const [signatureCodes, setSignatureCodes] = useState<SignatureCodeRow[]>([]);
   const [signatureExpiresAt, setSignatureExpiresAt] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [recipientMode, setRecipientMode] = useState<RecipientMode>("all");
   const [destinatarios, setDestinatarios] = useState<string[]>([]);
@@ -228,7 +230,7 @@ export default function NotificationADD() {
     setRequiresSignature(false);
   };
 
-  const notifyRequestError = async (response: Response) => {
+  const getRequestError = async (response: Response) => {
     const errorText = await response.text();
     const message =
       errorText || `Error al enviar la notificación (${response.status})`;
@@ -237,7 +239,7 @@ export default function NotificationADD() {
       status: response.status,
       body: errorText,
     });
-    alert(message);
+    return new Error(message);
   };
 
   const readCreateResponse = async (
@@ -259,8 +261,8 @@ export default function NotificationADD() {
 
     setSignatureCodes(codigos);
     setSignatureExpiresAt(payload.expiresAt || null);
-    alert(payload.message || "Notificación enviada correctamente");
     resetForm();
+    return payload;
   };
 
   const csvValue = (value: string | null | undefined) =>
@@ -298,14 +300,13 @@ export default function NotificationADD() {
       body: JSON.stringify(data),
     });
 
-    if (response.ok) {
-      await handleCreateSuccess(response);
-    } else {
-      await notifyRequestError(response);
-    }
+    if (!response.ok) throw await getRequestError(response);
+    return handleCreateSuccess(response);
   };
 
   const handleSubmit = async () => {
+    if (isSubmitting) return;
+
     const missingFields = [];
 
     if (recipientMode === "role" && selectRoles.length === 0) {
@@ -323,11 +324,10 @@ export default function NotificationADD() {
     if (notificationType === "document" && !file) missingFields.push("Archivo");
 
     if (missingFields.length > 0) {
-      alert(
-        `Por favor, complete los siguientes campos requeridos: ${missingFields.join(
-          ", "
-        )}`
-      );
+      sileo.warning({
+        title: "Faltan campos requeridos",
+        description: missingFields.join(", "),
+      });
       return;
     }
 
@@ -342,22 +342,27 @@ export default function NotificationADD() {
       maxDate.setHours(23, 59, 0, 0);
 
       if (selectedDate < minDate.getTime()) {
-        alert(
-          `La notificación debe programarse al menos ${MIN_SCHEDULE_OFFSET_MINUTES} minutos hacia adelante.`
-        );
+        sileo.warning({
+          title: "Programación demasiado próxima",
+          description: `Selecciona una hora con al menos ${MIN_SCHEDULE_OFFSET_MINUTES} minutos de anticipación.`,
+        });
         return;
       }
 
       if (selectedDate > maxDate.getTime()) {
-        alert(
-          `La notificación solo puede programarse hasta ${MAX_SCHEDULE_DAYS} días hacia adelante.`
-        );
+        sileo.warning({
+          title: "Programación fuera de rango",
+          description: `Solo puedes programar hasta ${MAX_SCHEDULE_DAYS} días hacia adelante.`,
+        });
         return;
       }
     }
 
     if (!token) {
-      alert("La sesión no está disponible. Vuelva a iniciar sesión.");
+      sileo.warning({
+        title: "Sesión no disponible",
+        description: "Vuelve a iniciar sesión para enviar la notificación.",
+      });
       return;
     }
 
@@ -388,7 +393,13 @@ export default function NotificationADD() {
       requiereFirma: requiresSignature,
     };
 
-    if (notificationType === "document") {
+    setIsSubmitting(true);
+
+    const submitRequest = async () => {
+      if (notificationType !== "document") {
+        return handleWhitoutDocument(data);
+      }
+
       const formData = new FormData();
 
       if (token) {
@@ -417,13 +428,34 @@ export default function NotificationADD() {
         }
       );
 
-      if (response.ok) {
-        await handleCreateSuccess(response);
-      } else {
-        await notifyRequestError(response);
-      }
-    } else {
-      handleWhitoutDocument(data);
+      if (!response.ok) throw await getRequestError(response);
+      return handleCreateSuccess(response);
+    };
+
+    try {
+      await sileo.promise(submitRequest(), {
+        loading: {
+          title: isScheduled ? "Programando notificación" : "Enviando notificación",
+          description: "Estamos procesando los destinatarios seleccionados.",
+        },
+        success: (payload) => ({
+          title: isScheduled ? "Notificación programada" : "Notificación enviada",
+          description:
+            payload.message ||
+            (payload.codigos?.length
+              ? `Se generaron ${payload.codigos.length} códigos de firma.`
+              : "La operación terminó correctamente."),
+        }),
+        error: (error) => ({
+          title: "No se pudo enviar la notificación",
+          description:
+            error instanceof Error ? error.message : "Inténtalo nuevamente.",
+        }),
+      });
+    } catch (error) {
+      console.error("Error al crear la notificación:", error);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -1201,9 +1233,15 @@ export default function NotificationADD() {
           type="button"
           className="w-full font-semibold shadow-sm"
           onPress={handleSubmit}
-          startContent={<Send size={18} />}
+          isLoading={isSubmitting}
+          isDisabled={isSubmitting}
+          startContent={isSubmitting ? undefined : <Send size={18} />}
         >
-          Enviar notificación
+          {isSubmitting
+            ? isScheduled
+              ? "Programando..."
+              : "Enviando..."
+            : "Enviar notificación"}
         </Button>
       </div>
     </div>

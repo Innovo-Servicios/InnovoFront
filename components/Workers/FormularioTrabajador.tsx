@@ -15,6 +15,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { useRut } from "react-rut-formatter";
+import { sileo } from "sileo";
 import { crearTrabajador } from "@/api/adm/api";
 import { useAuth } from "@/app/AuthContext";
 import { URL } from "@/config/config";
@@ -353,9 +354,7 @@ export function FormularioTrabajador() {
       return;
     }
 
-    try {
-      setIsSubmitting(true);
-
+    const createWorkerRequest = async () => {
       const response = await crearTrabajador(
         rut.raw,
         formData.Nombre.trim(),
@@ -396,8 +395,28 @@ export function FormularioTrabajador() {
 
       await fetchWorkers();
       resetForm();
+      return nuevoTrabajador;
+    };
 
-      alert("Trabajador creado correctamente");
+    setIsSubmitting(true);
+    try {
+      await sileo.promise(createWorkerRequest(), {
+        loading: {
+          title: "Creando trabajador",
+          description: "Estamos validando y guardando sus datos.",
+        },
+        success: (nuevoTrabajador) => ({
+          title: "Trabajador creado",
+          description: `${nuevoTrabajador.Nombre} quedó disponible en el listado.`,
+        }),
+        error: (error) => ({
+          title: "No se pudo crear el trabajador",
+          description:
+            error instanceof Error
+              ? error.message
+              : "Revisa los datos e inténtalo nuevamente.",
+        }),
+      });
     } catch (error: any) {
       console.error("Error al crear trabajador:", error);
 

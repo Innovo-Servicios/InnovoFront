@@ -13,6 +13,7 @@ import {
 } from "@heroui/react";
 import {
   CheckCircle2,
+  FileDown,
   FileSpreadsheet,
   FileText,
   History,
@@ -27,6 +28,7 @@ import ModificacionPuntualModal, {
   PuntualModificationRule,
 } from "@/components/Asignaciones/ModificacionPuntualModal";
 import HistorialAsignacionModal from "@/components/Asignaciones/HistorialAsignacionModal";
+import { downloadAuthenticatedFile } from "@/lib/authenticatedFiles";
 
 type AssignmentType = "lectura" | "reparto";
 
@@ -134,6 +136,8 @@ export default function AsignacionesViewerPanel() {
   );
 
   const [isLoading, setIsLoading] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [isDownloadingExcel, setIsDownloadingExcel] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isModificationOpen, setIsModificationOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -275,8 +279,60 @@ export default function AsignacionesViewerPanel() {
     );
   };
 
-  const printView = () => {
-    window.print();
+  const downloadPdf = async () => {
+    if (!empresa || !monthValue) return;
+
+    setIsDownloadingPdf(true);
+    setErrorMessage(null);
+
+    try {
+      const params = new URLSearchParams({
+        empresa,
+        month: monthValue,
+        zonal: "4",
+      });
+      await downloadAuthenticatedFile(
+        authenticatedFetch,
+        `/asignacion/exportar/programacion/pdf?${params}`,
+        `PROGRAMACION_${empresa}_${monthValue}.pdf`
+      );
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "No se pudo descargar el PDF."
+      );
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
+
+  const downloadExcel = async () => {
+    if (!empresa || !monthValue) return;
+
+    setIsDownloadingExcel(true);
+    setErrorMessage(null);
+
+    try {
+      const params = new URLSearchParams({
+        empresa,
+        month: monthValue,
+        zonal: "4",
+      });
+      await downloadAuthenticatedFile(
+        authenticatedFetch,
+        `/asignacion/exportar/programacion?${params}`,
+        `PROGRAMACION_${empresa}_${monthValue}.xlsx`
+      );
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "No se pudo descargar el Excel."
+      );
+    } finally {
+      setIsDownloadingExcel(false);
+    }
   };
 
   return (
@@ -499,11 +555,25 @@ export default function AsignacionesViewerPanel() {
             <Button
               className="w-full justify-start"
               variant="flat"
-              startContent={<FileText size={18} />}
+              color="success"
+              startContent={!isDownloadingPdf ? <FileText size={18} /> : null}
+              isLoading={isDownloadingPdf}
               isDisabled={assignments.length === 0}
-              onPress={printView}
+              onPress={downloadPdf}
             >
               Imprimir / guardar PDF
+            </Button>
+
+            <Button
+              className="w-full justify-start"
+              variant="flat"
+              color="success"
+              startContent={!isDownloadingExcel ? <FileDown size={18} /> : null}
+              isLoading={isDownloadingExcel}
+              isDisabled={assignments.length === 0}
+              onPress={downloadExcel}
+            >
+              Descargar Excel
             </Button>
 
             <Button

@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* HeroUI aplica su color de fondo a cualquier elemento con `data-theme`.
+   Sileo usa ese atributo en su viewport fijo, por lo que sin este override
+   aparece un rectángulo blanco detrás del toast. */
+[data-sileo-viewport][data-theme] {
+  background-color: transparent;
+}
+
 /* .form-scroll {
   scrollbar-width: thin;
   scrollbar-color: #94a3b8 transparent;

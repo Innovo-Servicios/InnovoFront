@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@heroui/button";
 import { Card, CardBody, CardHeader, Input } from "@heroui/react";
 import { ArrowLeft, ArrowRight } from "lucide-react";
+import { sileo } from "sileo";
 
 interface MiniProps {
   initialUrl: string;
@@ -22,7 +23,10 @@ export function Mini({ initialUrl }: MiniProps) {
         iframeRef.current.src = validatedUrl.href;
       }
     } catch {
-      alert("URL inválida");
+      sileo.warning({
+        title: "URL inválida",
+        description: "Ingresa una dirección completa, por ejemplo https://sitio.cl.",
+      });
     }
   };
 

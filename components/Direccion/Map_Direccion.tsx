@@ -12,6 +12,7 @@ import {
 import { Menu, MapPin } from "lucide-react";
 import { divIcon } from "leaflet";
 import { renderToString } from "react-dom/server";
+import { sileo } from "sileo";
 import { useAuth } from "@/app/AuthContext";
 import Tab_Cluester from "./Tab_Cluster";
 // Dynamically import react-leaflet components
@@ -70,9 +71,10 @@ export default function Map_Direccion() {
         const nombres = invalidDirecciones
           .map((d) => d.calle || d._id || "Sin nombre")
           .join(", ");
-        alert(
-          `Las siguientes direcciones tienen latitud o longitud inválidas: ${nombres}`
-        );
+        sileo.warning({
+          title: `${invalidDirecciones.length} direcciones sin coordenadas válidas`,
+          description: nombres,
+        });
       }
       setMarkers(validDirecciones);
       setIsOpen(false);
