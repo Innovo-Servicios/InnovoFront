@@ -2,6 +2,8 @@ import { URL } from "@/config/config";
 import type {
   CompanyDocument,
   CompanyDocumentCategory,
+  CompanyDocumentChangeControlItem,
+  CompanyDocumentEvidence,
   CompanyDocumentSummary,
   SignatureCandidates,
 } from "@/lib/companyDocuments";
@@ -54,6 +56,30 @@ export const archiveCompanyDocument = (fetcher: Fetcher, id: string) =>
 
 export const renewCompanyDocument = (fetcher: Fetcher, id: string, body: FormData) =>
   request<CompanyDocument>(fetcher, `/documentoEmpresa/${id}/renovar`, { method: "POST", body });
+
+export const approveCompanyDocument = (
+  fetcher: Fetcher,
+  id: string,
+  body: { tipo: "gerencia" | "prevencion"; estado?: "aprobado" | "rechazado"; comentario?: string }
+) =>
+  request<CompanyDocument>(fetcher, `/documentoEmpresa/${id}/aprobaciones`, { method: "POST", body: JSON.stringify(body) });
+
+export const diffuseCompanyDocument = (
+  fetcher: Fetcher,
+  id: string,
+  body: { objetivo?: "todos"; trabajadores?: string[]; mensaje?: string; alcanceDescripcion?: string } = {}
+) =>
+  request<{ message: string; document: CompanyDocument; codigos: string[] }>(
+    fetcher,
+    `/documentoEmpresa/${id}/difundir`,
+    { method: "POST", body: JSON.stringify(body) }
+  );
+
+export const getCompanyDocumentChangeControl = (fetcher: Fetcher) =>
+  request<CompanyDocumentChangeControlItem[]>(fetcher, "/documentoEmpresa/control-cambios");
+
+export const getCompanyDocumentEvidence = (fetcher: Fetcher, id: string) =>
+  request<CompanyDocumentEvidence>(fetcher, `/documentoEmpresa/${id}/evidencia`);
 
 export const addPhysicalSigner = (fetcher: Fetcher, id: string, body: Record<string, unknown>) =>
   request<CompanyDocument>(fetcher, `/documentoEmpresa/${id}/firmantes`, { method: "POST", body: JSON.stringify(body) });
