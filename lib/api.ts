@@ -1,4 +1,4 @@
-export const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.innovoservicios.cl';
+export const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'https://api.innovoservicios.cl';
 
 /**
  * Cliente de API base para manejar peticiones hacia el backend.
