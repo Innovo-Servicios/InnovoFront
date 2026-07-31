@@ -1,11 +1,10 @@
-import next from '@craco/eslint';
+import { FlatCompat } from '@eslint/eslintrc';
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const baseDirectory = dirname(fileURLToPath(import.meta.url));
+const compat = new FlatCompat({ baseDirectory });
 
 export default [
-  // Agrega aquí la configuración de Next.js directamente
-  ...next(),
-  {
-    rules: {
-      // Puedes añadir reglas personalizadas aquí si es necesario
-    },
-  },
+  ...compat.extends('next/core-web-vitals'),
 ];

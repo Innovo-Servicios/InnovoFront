@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useMemo, useCallback, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Accordion,
   AccordionItem,
@@ -55,10 +55,12 @@ export default function Tab_Sectores() {
       };
     },
   });
+  const listRef = useRef(list);
+  listRef.current = list;
 
   useEffect(() => {
     if (token) {
-      list.reload();
+      listRef.current.reload();
     }
   }, [token]);
 

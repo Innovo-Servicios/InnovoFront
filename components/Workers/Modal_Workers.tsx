@@ -1,4 +1,4 @@
-import React, { use, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   Modal,
   ModalContent,
@@ -65,7 +65,6 @@ export default function WorkerModal({
   rut,
   onClose,
 }: WorkerModalProps) {
-  if (!Worker) return null;
   const [worker, setWorker] = useState<Worker | null>(null);
   const [nombre, setNombre] = useState<string>("");
   const [correo, setCorreo] = useState<string>("");
@@ -73,7 +72,7 @@ export default function WorkerModal({
   const [Mod,setMod] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState(false);
   const { token, socket, authenticatedFetch } = useAuth();
-  const fetchWorkerDetails = async () => {
+  const fetchWorkerDetails = useCallback(async () => {
     const data = {
       token: token,
       rut: rut,
@@ -91,12 +90,12 @@ export default function WorkerModal({
     } catch (error) {
       console.error("Error fetching workers details:", error);
     }
-  };
+  }, [authenticatedFetch, rut, token]);
   useEffect(() => {
     if (token) {
-      fetchWorkerDetails();
+      void fetchWorkerDetails();
     }
-  }, [token]);
+  }, [fetchWorkerDetails, token]);
   const handlerMod = async () => {
     if(Mod){
       const data = {

@@ -19,6 +19,7 @@ import { Button } from "@heroui/react";
 import { useAuth } from "../AuthContext";
 import { uploadAsignacion } from "@/api/adm/api";
 import Link from "next/link";
+import { Can } from "@/components/access/Can";
 export default function Admin() {
   const { token, authenticatedFetch } = useAuth();
   const [file, setFile] = useState<File | null>(null);
@@ -125,7 +126,7 @@ export default function Admin() {
         <h1 className="text-4xl font-bold text-black">
           Panel de administración
         </h1>
-        <div className="flex items-center space-x-6 bg-white px-6 py-4 rounded-md shadow-md">
+        <Can permission="panel.bot.gestionar"><div className="flex items-center space-x-6 bg-white px-6 py-4 rounded-md shadow-md">
           {isActive ? (
             <Bot color={"black"} size={42} aria-label="Asistente Bot Activo" />
           ) : (
@@ -145,7 +146,7 @@ export default function Admin() {
           >
             {isActive ? "Activo" : "Inactivo"}
           </Button>
-        </div>
+        </div></Can>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <Card className="col-span-full lg:col-span-2 overflow-hidden">
@@ -168,7 +169,7 @@ export default function Admin() {
             </div>
           </CardBody>
         </Card>
-        <Card className="overflow-hidden group hover:shadow-lg transition-all duration-300">
+        <Can permission="asignaciones.importar"><Card className="overflow-hidden group hover:shadow-lg transition-all duration-300">
           <CardHeader className={headerGradient}>
             <CardFooter className="text-md font-medium">
               Subir asignaciones
@@ -230,8 +231,8 @@ export default function Admin() {
               </p>
             ) : null}
           </CardBody>
-        </Card>
-        <Link href="/adm/workers">
+        </Card></Can>
+        <Can permission="trabajadores.ver"><Link href="/adm/workers">
           <Card className="overflow-hidden group hover:shadow-lg transition-all duration-300">
             <CardHeader className={headerGradient}>
               <CardFooter className="text-lg font-medium">
@@ -249,8 +250,8 @@ export default function Admin() {
               </p>
             </CardBody>
           </Card>
-        </Link>
-        <Link href="/adm/asignaciones">
+        </Link></Can>
+        <Can permission="asignaciones.ver"><Link href="/adm/asignaciones">
           <Card className="overflow-hidden group hover:shadow-lg transition-all duration-300">
             <CardHeader className={headerGradient}>
               <CardFooter className="text-lg font-medium">
@@ -268,8 +269,8 @@ export default function Admin() {
               </p>
             </CardBody>
           </Card>
-        </Link>
-        <Link href="/adm/notification">
+        </Link></Can>
+        <Can permission="notificaciones.ver"><Link href="/adm/notification">
           <Card className="overflow-hidden group hover:shadow-lg transition-all duration-300">
             <CardHeader className={headerGradient}>
               <CardFooter className="text-lg font-medium">
@@ -287,8 +288,8 @@ export default function Admin() {
               </p>
             </CardBody>
           </Card>
-        </Link>
-        <Link href="/adm/novedades">
+        </Link></Can>
+        <Can permission="novedades.ver"><Link href="/adm/novedades">
           <Card className="overflow-hidden group hover:shadow-lg transition-all duration-300">
             <CardHeader className={headerGradient}>
               <CardFooter className="text-lg font-medium">
@@ -306,8 +307,8 @@ export default function Admin() {
               </p>
             </CardBody>
           </Card>
-        </Link>
-        <Link href="/adm/rutas">
+        </Link></Can>
+        <Can permission="rutas.ver"><Link href="/adm/rutas">
           <Card className="overflow-hidden group hover:shadow-lg transition-all duration-300">
             <CardHeader className={headerGradient}>
               <CardFooter className="text-lg font-medium">Ver Rutas</CardFooter>
@@ -323,8 +324,8 @@ export default function Admin() {
               </p>
             </CardBody>
           </Card>
-        </Link>
-        <Link href="/adm/followup">
+        </Link></Can>
+        <Can permission="seguimiento.ver"><Link href="/adm/followup">
           <Card className="overflow-hidden group hover:shadow-lg transition-all duration-300">
             <CardHeader className={headerGradient}>
               <CardFooter className="text-lg font-medium">
@@ -342,8 +343,8 @@ export default function Admin() {
               </p>
             </CardBody>
           </Card>
-        </Link>
-        <Link href="/adm/direcciones">
+        </Link></Can>
+        <Can permission="direcciones.ver"><Link href="/adm/direcciones">
           <Card className="overflow-hidden group hover:shadow-lg transition-all duration-300">
             <CardHeader className={headerGradient}>
               <CardFooter className="text-lg font-medium">
@@ -361,7 +362,7 @@ export default function Admin() {
               </p>
             </CardBody>
           </Card>
-        </Link>{/** 
+        </Link></Can>{/**
         <Card className="col-span-full overflow-hidden">
           <CardHeader className={headerGradient}>
             <CardFooter className="text-xl font-bold">

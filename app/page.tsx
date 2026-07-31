@@ -99,14 +99,14 @@ export default function LandingPage() {
           className="relative text-white py-20 overflow-hidden min-h-[520px]"
         >
           {/* Imagen de fondo */}
-          <Image
+          {/* <Image
             src="/hero.png"
             alt="Dashboard de monitoreo de gas inteligente Innovo"
             fill
             priority
             className="object-cover"
             sizes="100vw"
-          />
+          /> */}
 
           {/* Capa azul encima de la imagen */}
           <div className="absolute inset-0 bg-gradient-to-r from-blue-700/95 via-blue-600/85 to-blue-700/70" />

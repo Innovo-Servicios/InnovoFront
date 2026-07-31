@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DatePicker,
   Input,
@@ -36,6 +36,9 @@ import { I18nProvider } from "@react-aria/i18n";
 import { sileo } from "sileo";
 import { useAuth } from "../../app/AuthContext";
 import { URL } from "../../config/config";
+import { getRoles } from "@/api/adm/accessControl";
+import type { AccessRole } from "@/lib/accessControl";
+import { ARCHETYPE_LABELS } from "@/lib/accessControl";
 
 interface Worker {
   Rut: string;
@@ -67,11 +70,61 @@ const CONTENT_MAX_LENGTH = 500;
 const MIN_SCHEDULE_OFFSET_MINUTES = 10;
 const MAX_SCHEDULE_DAYS = 90;
 
+const dateToPickerValue = (date: Date) =>
+  parseAbsoluteToLocal(date.toISOString());
+
+const getMinScheduleDate = () => {
+  const date = new Date();
+  date.setMinutes(date.getMinutes() + MIN_SCHEDULE_OFFSET_MINUTES);
+  return dateToPickerValue(date);
+};
+
+const getMaxScheduleDate = () => {
+  const date = new Date();
+  date.setDate(date.getDate() + MAX_SCHEDULE_DAYS);
+  date.setHours(23, 59, 0, 0);
+  return dateToPickerValue(date);
+};
+
+const getTodayAt = (hour: number, minute = 0) => {
+  const date = new Date();
+  date.setHours(hour, minute, 0, 0);
+  return dateToPickerValue(date);
+};
+
+const getTomorrowAt = (hour: number, minute = 0) => {
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  date.setHours(hour, minute, 0, 0);
+  return dateToPickerValue(date);
+};
+
+const getNextWeekdayAt = (targetDay: number, hour: number, minute = 0) => {
+  const date = new Date();
+  const currentDay = date.getDay();
+  let daysUntilTarget = (targetDay + 7 - currentDay) % 7;
+
+  if (daysUntilTarget === 0) {
+    daysUntilTarget = 7;
+  }
+
+  date.setDate(date.getDate() + daysUntilTarget);
+  date.setHours(hour, minute, 0, 0);
+  return dateToPickerValue(date);
+};
+
+const isFutureEnough = (date: Date) => {
+  const minDate = new Date();
+  minDate.setMinutes(minDate.getMinutes() + MIN_SCHEDULE_OFFSET_MINUTES);
+  return date.getTime() >= minDate.getTime();
+};
+
 export default function NotificationADD() {
   const [notificationType, setNotificationType] = useState("msg");
   const { token, authenticatedFetch } = useAuth();
 
   const [workers, setWorkers] = useState<Worker[]>([]);
+  const [roleOptions, setRoleOptions] = useState<AccessRole[]>([]);
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduledDate, setScheduledDate] = useState(now(getLocalTimeZone()));
   const [selectedQuickSchedule, setSelectedQuickSchedule] = useState<string | null>(null);
@@ -94,66 +147,6 @@ export default function NotificationADD() {
   const [content, setContent] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
-
-  const roleOptions = [
-    { value: "administracion", label: "Administración" },
-    { value: "lector", label: "Lector" },
-    { value: "supervisor", label: "Supervisor" },
-    { value: "inspector", label: "Inspector" },
-  ];
-
-  const dateToPickerValue = (date: Date) => {
-    return parseAbsoluteToLocal(date.toISOString());
-  };
-
-  const getMinScheduleDate = () => {
-    const date = new Date();
-    date.setMinutes(date.getMinutes() + MIN_SCHEDULE_OFFSET_MINUTES);
-    return dateToPickerValue(date);
-  };
-
-  const getMaxScheduleDate = () => {
-    const date = new Date();
-    date.setDate(date.getDate() + MAX_SCHEDULE_DAYS);
-    date.setHours(23, 59, 0, 0);
-    return dateToPickerValue(date);
-  };
-
-  const getTodayAt = (hour: number, minute = 0) => {
-    const date = new Date();
-    date.setHours(hour, minute, 0, 0);
-    return dateToPickerValue(date);
-  };
-
-  const getTomorrowAt = (hour: number, minute = 0) => {
-    const date = new Date();
-    date.setDate(date.getDate() + 1);
-    date.setHours(hour, minute, 0, 0);
-    return dateToPickerValue(date);
-  };
-
-  const getNextWeekdayAt = (targetDay: number, hour: number, minute = 0) => {
-    const date = new Date();
-    const currentDay = date.getDay();
-
-    let daysUntilTarget = (targetDay + 7 - currentDay) % 7;
-
-    if (daysUntilTarget === 0) {
-      daysUntilTarget = 7;
-    }
-
-    date.setDate(date.getDate() + daysUntilTarget);
-    date.setHours(hour, minute, 0, 0);
-
-    return dateToPickerValue(date);
-  };
-
-  const isFutureEnough = (date: Date) => {
-    const minDate = new Date();
-    minDate.setMinutes(minDate.getMinutes() + MIN_SCHEDULE_OFFSET_MINUTES);
-
-    return date.getTime() >= minDate.getTime();
-  };
 
   const quickScheduleOptions = useMemo(() => {
     const todayAfternoon = new Date();
@@ -367,13 +360,9 @@ export default function NotificationADD() {
     }
 
     const objetivo =
-      recipientMode === "all"
-        ? ["all"]
-        : recipientMode === "people"
-        ? destinatarios
-        : [];
+      recipientMode === "all" ? ["all"] : recipientMode === "people" ? destinatarios : [];
 
-    const cargo = recipientMode === "role" ? selectRoles : [];
+    const roles = recipientMode === "role" ? selectRoles : [];
 
     const scheduledDatePayload = isScheduled
       ? scheduledDate.toDate().toISOString()
@@ -388,7 +377,7 @@ export default function NotificationADD() {
       contenido: content,
       fechaProgramacion: scheduledDatePayload,
       archivo: file,
-      cargo,
+      roles,
       programada: isScheduled,
       requiereFirma: requiresSignature,
     };
@@ -418,7 +407,7 @@ export default function NotificationADD() {
       formData.append("programada", String(isScheduled));
       formData.append("requiereFirma", String(requiresSignature));
       formData.append("file", file as Blob);
-      formData.append("cargo", JSON.stringify(cargo));
+      formData.append("roles", JSON.stringify(roles));
 
       const response = await authenticatedFetch(
         `${URL}/notificaciones/crearNotificacionDocumento`,
@@ -435,11 +424,15 @@ export default function NotificationADD() {
     try {
       await sileo.promise(submitRequest(), {
         loading: {
-          title: isScheduled ? "Programando notificación" : "Enviando notificación",
+          title: isScheduled
+            ? "Programando notificación"
+            : "Enviando notificación",
           description: "Estamos procesando los destinatarios seleccionados.",
         },
         success: (payload) => ({
-          title: isScheduled ? "Notificación programada" : "Notificación enviada",
+          title: isScheduled
+            ? "Notificación programada"
+            : "Notificación enviada",
           description:
             payload.message ||
             (payload.codigos?.length
@@ -459,7 +452,7 @@ export default function NotificationADD() {
     }
   };
 
-  const fetchWorkers = async () => {
+  const fetchWorkers = useCallback(async () => {
     const res = await authenticatedFetch(`${URL}/trabajador/listarTrabajadores`, {
       method: "POST",
       headers: {
@@ -477,13 +470,16 @@ export default function NotificationADD() {
       : [];
 
     setWorkers(sortedWorkers);
-  };
+  }, [authenticatedFetch, token]);
 
   useEffect(() => {
     if (token != null) {
-      fetchWorkers();
+      void fetchWorkers();
+      getRoles(authenticatedFetch)
+        .then((items) => setRoleOptions(items.filter((role) => role.activo)))
+        .catch(() => setRoleOptions([]));
     }
-  }, [authenticatedFetch, token]);
+  }, [authenticatedFetch, fetchWorkers, token]);
 
   useEffect(() => {
     if (!isScheduled) return;
@@ -569,11 +565,11 @@ export default function NotificationADD() {
   };
 
   const getSelectedRoleLabels = () => {
-    if (selectRoles.length === 0) return "Seleccione uno o más cargos";
+    if (selectRoles.length === 0) return "Seleccione uno o más roles";
 
     return roleOptions
-      .filter((role) => selectRoles.includes(role.value))
-      .map((role) => role.label)
+      .filter((role) => selectRoles.includes(role.id))
+      .map((role) => role.nombre)
       .join(", ");
   };
 
@@ -736,7 +732,7 @@ export default function NotificationADD() {
                 className="rounded-xl font-semibold"
                 onPress={() => handleRecipientModeChange("role")}
               >
-                Por cargo
+                Por rol
               </Button>
 
               <Button
@@ -753,17 +749,14 @@ export default function NotificationADD() {
             {recipientMode === "all" && (
               <div className="flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-3 text-sm text-blue-700">
                 <Info size={18} className="mt-0.5 flex-shrink-0" />
-                <p>
-                  La notificación será enviada a todos los trabajadores
-                  registrados.
-                </p>
+                <p>La notificación será enviada a todos los trabajadores registrados.</p>
               </div>
             )}
 
             {recipientMode === "role" && (
               <div className="space-y-3">
                 <Select
-                  label="Cargos"
+                  label="Roles"
                   variant="bordered"
                   placeholder={getSelectedRoleLabels()}
                   selectedKeys={new Set(selectRoles)}
@@ -776,11 +769,11 @@ export default function NotificationADD() {
                   }
                 >
                   {roleOptions.map((role) => {
-                    const isSelected = selectRoles.includes(role.value);
+                    const isSelected = selectRoles.includes(role.id);
 
                     return (
                       <SelectItem
-                        key={role.value}
+                        key={role.id}
                         classNames={{
                           base: isSelected
                             ? "bg-blue-100 text-blue-700 data-[hover=true]:bg-blue-200 data-[selectable=true]:focus:bg-blue-200"
@@ -789,7 +782,7 @@ export default function NotificationADD() {
                           selectedIcon: isSelected ? "text-blue-600" : "",
                         }}
                       >
-                        {role.label}
+                        {role.nombre} · {ARCHETYPE_LABELS[role.arquetipo]}
                       </SelectItem>
                     );
                   })}
@@ -799,7 +792,7 @@ export default function NotificationADD() {
                   <Info size={18} className="mt-0.5 flex-shrink-0" />
                   <p>
                     Se enviará a todos los trabajadores que pertenezcan a los
-                    cargos seleccionados.
+                    roles seleccionados.
                   </p>
                 </div>
               </div>
@@ -1122,7 +1115,7 @@ export default function NotificationADD() {
           >
             <Checkbox
               isSelected={isScheduled}
-              onValueChange={handleScheduleToggle} 
+              onValueChange={handleScheduleToggle}
             >
               Programar notificación
             </Checkbox>
@@ -1206,12 +1199,14 @@ export default function NotificationADD() {
           </section>
 
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <Checkbox
-              isSelected={requiresSignature}
-              onValueChange={setRequiresSignature}
-            >
-              Requiere firma y aceptación
-            </Checkbox>
+            <div className="space-y-3">
+              <Checkbox
+                isSelected={requiresSignature}
+                onValueChange={setRequiresSignature}
+              >
+                Requiere firma y aceptación manual
+              </Checkbox>
+            </div>
 
             {requiresSignature && (
               <div className="mt-4 flex items-start gap-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-3 text-sm text-emerald-700">
@@ -1223,6 +1218,7 @@ export default function NotificationADD() {
                 </p>
               </div>
             )}
+
           </section>
         </form>
       </div>

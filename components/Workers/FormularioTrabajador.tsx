@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Input, Select, SelectItem, Button } from "@heroui/react";
 import {
   User,
@@ -19,6 +19,9 @@ import { sileo } from "sileo";
 import { crearTrabajador } from "@/api/adm/api";
 import { useAuth } from "@/app/AuthContext";
 import { URL } from "@/config/config";
+import { getRoles } from "@/api/adm/accessControl";
+import type { AccessRole } from "@/lib/accessControl";
+import { ARCHETYPE_LABELS } from "@/lib/accessControl";
 
 type FormData = {
   Rut: string;
@@ -53,6 +56,7 @@ export function FormularioTrabajador() {
   const { token, socket, authenticatedFetch } = useAuth();
 
   const [workers, setWorkers] = useState<Worker[]>([]);
+  const [roles, setRoles] = useState<AccessRole[]>([]);
   const [isLoadingWorkers, setIsLoadingWorkers] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -193,7 +197,7 @@ export function FormularioTrabajador() {
       ? !!currentEmailError
       : (emailTouched || submitted) && !!currentEmailError;
 
-  const fetchWorkers = async () => {
+  const fetchWorkers = useCallback(async () => {
     if (!token) return;
 
     try {
@@ -218,17 +222,22 @@ export function FormularioTrabajador() {
     } finally {
       setIsLoadingWorkers(false);
     }
-  };
+  }, [authenticatedFetch, token]);
 
   useEffect(() => {
-    fetchWorkers();
-  }, [token]);
+    void fetchWorkers();
+    if (token) {
+      getRoles(authenticatedFetch)
+        .then((items) => setRoles(items.filter((role) => role.activo)))
+        .catch(() => setRoles([]));
+    }
+  }, [authenticatedFetch, fetchWorkers, token]);
 
   useEffect(() => {
     if (!socket) return;
 
     const handleWorkerUpdate = () => {
-      fetchWorkers();
+      void fetchWorkers();
     };
 
     socket.on("updateWorker", handleWorkerUpdate);
@@ -238,7 +247,7 @@ export function FormularioTrabajador() {
       socket.off("updateWorker", handleWorkerUpdate);
       socket.off("nuevo-trabajador", handleWorkerUpdate);
     };
-  }, [socket, token]);
+  }, [fetchWorkers, socket]);
 
   const resetForm = () => {
     updateRut("");
@@ -273,12 +282,8 @@ export function FormularioTrabajador() {
       newErrors.Nombre = nameError;
     }
 
-    if (
-      !["administracion", "lector", "supervisor", "inspector"].includes(
-        formData.cargo
-      )
-    ) {
-      newErrors.cargo = "Seleccione un cargo válido";
+    if (!roles.some((role) => role.id === formData.cargo)) {
+      newErrors.cargo = "Seleccione un rol válido";
     }
 
     if (emailError) {
@@ -368,10 +373,11 @@ export function FormularioTrabajador() {
         throw new Error(await response.text());
       }
 
+      const selectedRole = roles.find((role) => role.id === formData.cargo);
       const nuevoTrabajador = {
         Rut: rut.raw,
         Nombre: formData.Nombre.trim(),
-        cargo: formData.cargo,
+        cargo: selectedRole?.arquetipo || "lector",
         correo: formData.correo.trim(),
       };
 
@@ -560,25 +566,26 @@ export function FormularioTrabajador() {
                   Información laboral
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Cargo y acceso inicial al sistema.
+                  Rol de acceso y función operativa inicial.
                 </p>
               </div>
             </div>
 
             <div className="space-y-3">
               <Select
-                label="Cargo"
-                placeholder="Selecciona un cargo"
+                label="Rol"
+                placeholder="Selecciona un rol"
                 selectedKeys={formData.cargo ? [formData.cargo] : []}
                 onChange={handleSelectChange}
                 isInvalid={!!errors.cargo}
                 errorMessage={errors.cargo}
                 variant="bordered"
               >
-                <SelectItem key="administracion">Administración</SelectItem>
-                <SelectItem key="lector">Lector</SelectItem>
-                <SelectItem key="supervisor">Supervisor</SelectItem>
-                <SelectItem key="inspector">Inspector</SelectItem>
+                {roles.map((role) => (
+                  <SelectItem key={role.id} textValue={role.nombre}>
+                    {role.nombre} · {ARCHETYPE_LABELS[role.arquetipo]}
+                  </SelectItem>
+                ))}
               </Select>
 
               <Input

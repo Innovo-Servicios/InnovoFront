@@ -5,7 +5,7 @@ type Fetcher = typeof fetch;
 export const crearTrabajador = async (
   rut: string,
   nombre: string,
-  cargo: string,
+  rolId: string,
   correo: string,
   clave: string,
   fetcher: Fetcher = fetch
@@ -15,7 +15,7 @@ export const crearTrabajador = async (
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ rut, nombre, cargo, correo, clave }),
+      body: JSON.stringify({ rut, nombre, rolId, correo, clave }),
     });
     return res;
   };

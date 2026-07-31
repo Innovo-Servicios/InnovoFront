@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Drawer,
   DrawerContent,
@@ -22,6 +22,11 @@ import {
   CardFooter,
   input,
   DateRangePicker,
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
 } from "@heroui/react";
 import { I18nProvider } from "@react-aria/i18n";
 import { Spinner } from "@heroui/react";
@@ -54,13 +59,29 @@ import {
   Hash,
   Save,
   UserRoundX,
+  Plus,
 } from "lucide-react";
 import { parseDate } from "@internationalized/date";
 import { sileo } from "sileo";
+import {
+  assignTemporaryWorkerRole,
+  assignWorkerRole,
+  getRoles,
+  removeTemporaryWorkerRole,
+} from "@/api/adm/accessControl";
+import type { AccessRole } from "@/lib/accessControl";
+import { ARCHETYPE_LABELS } from "@/lib/accessControl";
 interface WorkerDetails {
+  _id: string;
   Nombre: string;
   Rut: string;
   cargo: string;
+  arquetipo?: "administracion" | "lector" | "supervisor" | "inspector";
+  rol?: { id: string; nombre: string; arquetipo: string } | null;
+  rolTemporal?: {
+    rol?: { id: string; nombre: string; arquetipo: string } | null;
+    expiracion?: string;
+  } | null;
   correo: string;
   lastUbication?: {
     lat: number;
@@ -79,6 +100,7 @@ interface WorkerDetails {
   }[];
   documentos: {
     _id: string;
+    nombreOriginal?: string;
     tipo?: { _id: string; value: string };
     url: string;
     formato: string;
@@ -123,6 +145,23 @@ interface Sectores {
   _id: string;
   sectorNombre: string;
 }
+
+const getFileNameFromDocumentUrl = (url?: string) => {
+  const rawUrl = String(url || "").trim();
+  if (!rawUrl) return "";
+
+  const lastSegment = rawUrl.split(/[\\/]/).filter(Boolean).pop() || "";
+  const fileName = lastSegment.split("?")[0] || "";
+  try {
+    return decodeURIComponent(fileName).trim();
+  } catch {
+    return fileName.trim();
+  }
+};
+
+const getWorkerDocumentDisplayName = (doc: WorkerDetails["documentos"][number]) =>
+  doc.nombreOriginal?.trim() || getFileNameFromDocumentUrl(doc.url) || doc.tipo?.value || "Documento";
+
 export default function Drawer_Worker({
   isOpen,
   onOpenChange,
@@ -130,15 +169,21 @@ export default function Drawer_Worker({
 }: DrawerWorkerProps) {
   const [activeTab, setActiveTab] = useState("details");
   const [worker, setWorker] = useState<WorkerDetails | null>(null);
-  const { token, socket, authenticatedFetch } = useAuth();
+  const { token, socket, authenticatedFetch, hasPermission } = useAuth();
   const [nombre, setNombre] = useState<string>(""); // Nombre del trabajador
   const [correo, setCorreo] = useState<string>(""); // Correo del trabajador
-  const [cargo, setCargo] = useState<string>(""); // Cargo del trabajador
+  const [selectedRoleId, setSelectedRoleId] = useState("");
+  const [roles, setRoles] = useState<AccessRole[]>([]);
+  const [temporaryRoleId, setTemporaryRoleId] = useState("");
+  const [temporaryExpiration, setTemporaryExpiration] = useState("");
   const [Mod, setMod] = useState<boolean>(false); // Modo de edición
   const [file, setFile] = useState<File | null>(null); // Archivo seleccionado
   const [tipoDocumentos, setTipoDocumentos] = useState<TipoDocumentos[]>([]);
   const [tipoDocumentosSelected, setTipoDocumentosSelected] =
     useState<string>("");
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [sectores, setSectores] = useState<Sectores[]>([]);
   const [sectorSelected, setSectorSelected] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -150,7 +195,7 @@ export default function Drawer_Worker({
     ),
     end: parseDate(new Date().toISOString().split("T")[0]),
   });
-  const fetchWorker = async () => {
+  const fetchWorker = useCallback(async () => {
     const response = await authenticatedFetch(`${URL}/trabajador/datosTrabajador`, {
       method: "POST",
       headers: {
@@ -163,10 +208,10 @@ export default function Drawer_Worker({
     setWorker(data);
     setNombre(data.Nombre);
     setCorreo(data.correo);
-    setCargo(data.cargo);
-    console.log(data.cargo);
-  };
-  const fetchTipoDocumentos = async () => {
+    setSelectedRoleId(data.rol?.id || "");
+    setTemporaryRoleId(data.rolTemporal?.rol?.id || "");
+  }, [authenticatedFetch, token, workerKey]);
+  const fetchTipoDocumentos = useCallback(async () => {
     const notVisible = [
       "679fcfe4d964658484179acf",
       "678840cf7e67e1e8c95c27bd",
@@ -183,9 +228,13 @@ export default function Drawer_Worker({
     let data = await response.json();
     //quitar los elementos de data que coincidan su _id con uno de los elementos de la lista de noVisible
     data = data.filter((element: any) => !notVisible.includes(element._id));
-    setTipoDocumentos(data);
-  };
-  const fetchSectores = async () => {
+    setTipoDocumentos(
+      data.sort((a: TipoDocumentos, b: TipoDocumentos) =>
+        a.value.localeCompare(b.value, "es", { sensitivity: "base" })
+      )
+    );
+  }, [authenticatedFetch, token]);
+  const fetchSectores = useCallback(async () => {
     const response = await authenticatedFetch(`${URL}/sector/sectorApoyo`, {
       method: "POST",
       headers: {
@@ -195,14 +244,17 @@ export default function Drawer_Worker({
     });
     const data = await response.json();
     setSectores(data);
-  };
+  }, [authenticatedFetch, token]);
   useEffect(() => {
     if (isOpen && token) {
-      fetchWorker();
-      fetchTipoDocumentos();
-      fetchSectores();
+      void fetchWorker();
+      void fetchTipoDocumentos();
+      void fetchSectores();
+      getRoles(authenticatedFetch)
+        .then((items) => setRoles(items.filter((role) => role.activo)))
+        .catch(() => setRoles([]));
     }
-  }, [isOpen, token]);
+  }, [authenticatedFetch, fetchSectores, fetchTipoDocumentos, fetchWorker, isOpen, token]);
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files ? event.target.files[0] : null;
     setFile(file);
@@ -346,13 +398,50 @@ export default function Drawer_Worker({
       console.error("Error al subir el documento:", error);
     }
   };
+  const handleCreateDocumentCategory = async () => {
+    const value = newCategoryName.trim().replace(/\s+/g, " ");
+    if (value.length < 2) return;
+
+    setIsCreatingCategory(true);
+    try {
+      const response = await authenticatedFetch(`${URL}/tipoDocumento/crearTipo`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ token, value }),
+      });
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(payload?.message || "El servidor no pudo crear la categoría.");
+      }
+
+      const createdCategory = payload?.tipo as TipoDocumentos | undefined;
+      await fetchTipoDocumentos();
+      if (createdCategory?._id) setTipoDocumentosSelected(createdCategory._id);
+      setNewCategoryName("");
+      setIsCategoryModalOpen(false);
+      sileo.success({
+        title: "Categoría creada",
+        description: `${createdCategory?.value || value} quedó seleccionada para este documento.`,
+      });
+    } catch (error) {
+      sileo.error({
+        title: "No se pudo crear la categoría",
+        description: error instanceof Error ? error.message : "Inténtalo nuevamente.",
+      });
+    } finally {
+      setIsCreatingCategory(false);
+    }
+  };
   const handlerMod = async () => {
     if (Mod) {
       if (!worker) return;
       if (
         nombre === worker.Nombre &&
         correo === worker.correo &&
-        cargo === worker.cargo
+        selectedRoleId === worker.rol?.id
       ) {
         sileo.info({
           title: "Sin cambios pendientes",
@@ -366,7 +455,6 @@ export default function Drawer_Worker({
         rut: worker.Rut,
         Nuevonombre: nombre,
         Nuevocorreo: correo,
-        Nuevocargo: cargo,
       };
       const updateRequest = async () => {
         const response = await authenticatedFetch(
@@ -380,6 +468,10 @@ export default function Drawer_Worker({
 
         if (!response.ok) {
           throw new Error("El servidor no pudo guardar los cambios.");
+        }
+
+        if (selectedRoleId && selectedRoleId !== worker.rol?.id) {
+          await assignWorkerRole(authenticatedFetch, worker._id, selectedRoleId);
         }
       };
 
@@ -397,12 +489,41 @@ export default function Drawer_Worker({
           }),
         });
         setMod(false);
+        await fetchWorker();
         socket?.emit("updateWorker");
       } catch (error) {
         console.error("Error al modificar los datos del trabajador:", error);
       }
     } else {
       setMod(!Mod);
+    }
+  };
+  const handleTemporaryRole = async () => {
+    if (!worker || !temporaryRoleId || !temporaryExpiration) return;
+    try {
+      await assignTemporaryWorkerRole(
+        authenticatedFetch,
+        worker._id,
+        temporaryRoleId,
+        new Date(temporaryExpiration).toISOString()
+      );
+      await fetchWorker();
+      sileo.success({ title: "Rol temporal asignado" });
+    } catch (error) {
+      sileo.error({ title: "No se pudo asignar el rol temporal", description: error instanceof Error ? error.message : undefined });
+    }
+  };
+
+  const handleRemoveTemporaryRole = async () => {
+    if (!worker) return;
+    try {
+      await removeTemporaryWorkerRole(authenticatedFetch, worker._id);
+      setTemporaryRoleId("");
+      setTemporaryExpiration("");
+      await fetchWorker();
+      sileo.success({ title: "Rol temporal eliminado" });
+    } catch (error) {
+      sileo.error({ title: "No se pudo eliminar el rol temporal", description: error instanceof Error ? error.message : undefined });
     }
   };
   const handleDelete = async (rut:string) => {
@@ -456,7 +577,6 @@ export default function Drawer_Worker({
         setTipoDocumentosSelected("");
         setNombre("");
         setCorreo("");
-        setCargo("");
         setActiveTab("details");
       }}
     >
@@ -505,6 +625,7 @@ export default function Drawer_Worker({
                               color={Mod ? "success" : "warning"}
                               className="w-[25%] gap-1 p-1 self-start"
                               onPress={handlerMod}
+                              isDisabled={!hasPermission("trabajadores.editar")}
                               startContent={
                                 Mod ? <Save size={24} /> : <UserCog size={24} />
                               }
@@ -525,27 +646,57 @@ export default function Drawer_Worker({
                                 }
                               />
                               <Select
-                                label="Cargo"
-                                selectedKeys={[cargo]}
-                                isDisabled={!Mod}
+                                label="Rol"
+                                selectedKeys={selectedRoleId ? [selectedRoleId] : []}
+                                isDisabled={!Mod || !hasPermission("trabajadores.roles.asignar")}
                                 variant="bordered"
                                 startContent={
                                   <Briefcase className="text-default-400 pointer-events-none flex-shrink-0" />
                                 }
-                                onChange={(e) => {setCargo(e.target.value)}}
+                                onChange={(e) => {setSelectedRoleId(e.target.value)}}
                               >
-                                <SelectItem key="administracion">
-                                  Administración
-                                </SelectItem>
-                                <SelectItem key="lector">Lector</SelectItem>
-                                <SelectItem key="supervisor">
-                                  Supervisor
-                                </SelectItem>
-                                <SelectItem key="inspector">
-                                  Inspector
-                                </SelectItem>
+                                {roles.map((role) => (
+                                  <SelectItem key={role.id} textValue={role.nombre}>
+                                    {role.nombre} · {ARCHETYPE_LABELS[role.arquetipo]}
+                                  </SelectItem>
+                                ))}
                               </Select>
                             </div>
+                            {hasPermission("trabajadores.roles.temporales") && (
+                              <div className="rounded-xl border border-dashed border-primary-200 bg-primary-50/40 p-3">
+                                <p className="mb-3 text-sm font-semibold text-slate-700">Acceso temporal</p>
+                                {worker.rolTemporal?.rol ? (
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div className="text-sm">
+                                      <p className="font-medium">{worker.rolTemporal.rol.nombre}</p>
+                                      <p className="text-slate-500">Hasta {worker.rolTemporal.expiracion ? new Date(worker.rolTemporal.expiracion).toLocaleString("es-CL") : "sin fecha"}</p>
+                                    </div>
+                                    <Button size="sm" color="danger" variant="light" onPress={handleRemoveTemporaryRole}>Quitar</Button>
+                                  </div>
+                                ) : (
+                                  <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+                                    <Select
+                                      size="sm"
+                                      label="Rol temporal"
+                                      selectedKeys={temporaryRoleId ? [temporaryRoleId] : []}
+                                      onChange={(event) => setTemporaryRoleId(event.target.value)}
+                                    >
+                                      {roles
+                                        .filter((role) => role.arquetipo === (worker.arquetipo || worker.cargo) && role.id !== worker.rol?.id)
+                                        .map((role) => <SelectItem key={role.id}>{role.nombre}</SelectItem>)}
+                                    </Select>
+                                    <Input
+                                      size="sm"
+                                      type="datetime-local"
+                                      label="Expira"
+                                      value={temporaryExpiration}
+                                      onValueChange={setTemporaryExpiration}
+                                    />
+                                    <Button size="sm" color="primary" className="self-end" isDisabled={!temporaryRoleId || !temporaryExpiration} onPress={handleTemporaryRole}>Asignar</Button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                             <Input
                               label="Nombre"
                               value={nombre}
@@ -617,6 +768,7 @@ export default function Drawer_Worker({
                           size="md"
                           startContent={<Send size={24} />}
                           onPress={handleSendHelp}
+                          isDisabled={!hasPermission("trabajadores.apoyos.gestionar")}
                         >
                           Asignar
                         </Button>
@@ -794,21 +946,20 @@ export default function Drawer_Worker({
                       <div className="w-full rounded-t-lg bg-[#fdedd3] justify-between flex items-center p-2">
                         <Button
                           variant="light"
-                          className="flex flex-row items-center justify-center gap-2"
+                          className="flex min-w-0 flex-row items-center justify-start gap-2"
                           onPress={() =>
                             downloadAuthenticatedFile(
                               authenticatedFetch,
                               doc.url,
-                              doc.tipo?.value || "documento"
+                              getWorkerDocumentDisplayName(doc)
                             ).catch((error) =>
                               console.error("Error al descargar el documento:", error)
                             )
                           }
                         >
                           <ExternalLink size={20} color="#3b82f6" />
-                          <h3 className="text-black text-lg font-semibold">
-                            {/* */}
-                            {doc.tipo?.value || "Tipo no disponible"}
+                          <h3 className="max-w-[420px] truncate text-left text-lg font-semibold text-black" title={getWorkerDocumentDisplayName(doc)}>
+                            {getWorkerDocumentDisplayName(doc)}
                           </h3>
                         </Button>
                         <div className="flex flex-row gap-2 justify-center items-center">
@@ -822,6 +973,7 @@ export default function Drawer_Worker({
                             isIconOnly
                             variant="light"
                             color="danger"
+                            isDisabled={!hasPermission("trabajadores.documentos.gestionar")}
                             onPress={() =>
                               handleDeleteDocuments(doc._id, worker.Rut)
                             }
@@ -843,6 +995,10 @@ export default function Drawer_Worker({
                           <Hash size={18} />
                           {doc._id}
                         </p>
+                        <p className="flex flex-row items-center justify-start gap-1">
+                          <File size={18} />
+                          {doc.tipo?.value || "Sin categoría"}
+                        </p>
                       </div>
                     </div>
                   ))}
@@ -859,8 +1015,8 @@ export default function Drawer_Worker({
                 Agregue documentos a este trabajador.
               </p>
             </div>
-            <div className="flex flex-row gap-4 w-full">
-              <div className="w-2/5">
+            <div className="grid w-full gap-3 md:grid-cols-[2fr_2fr_1fr]">
+              <div>
                 <input
                   type="file"
                   id="file-input"
@@ -890,36 +1046,97 @@ export default function Drawer_Worker({
                     : "Seleccionar archivo"}
                 </Button>
               </div>
-              <Select
-                className="w-2/5"
-                label="Seleccione tipo"
-                size="sm"
-                variant="bordered"
-                onChange={(e) => setTipoDocumentosSelected(e.target.value)}
-              >
-                {tipoDocumentos.map((tipo) => (
-                  <SelectItem key={tipo._id}>{tipo.value}</SelectItem>
-                ))}
-              </Select>
+              <div className="flex min-w-0 gap-2">
+                <Select
+                  className="min-w-0 flex-1"
+                  label="Categoría del documento"
+                  size="sm"
+                  variant="bordered"
+                  selectedKeys={tipoDocumentosSelected ? [tipoDocumentosSelected] : []}
+                  onChange={(e) => setTipoDocumentosSelected(e.target.value)}
+                >
+                  {tipoDocumentos.map((tipo) => (
+                    <SelectItem key={tipo._id}>{tipo.value}</SelectItem>
+                  ))}
+                </Select>
+                <Button
+                  isIconOnly
+                  size="lg"
+                  variant="flat"
+                  color="primary"
+                  aria-label="Crear categoría de documento"
+                  title="Crear categoría"
+                  isDisabled={!hasPermission("trabajadores.documentos.gestionar")}
+                  onPress={() => setIsCategoryModalOpen(true)}
+                >
+                  <Plus size={22} />
+                </Button>
+              </div>
               <Button
-                className="w-1/5 p-0"
+                className="p-0"
                 size="lg"
                 variant="flat"
                 color={!file || !tipoDocumentosSelected ? "default" : "success"}
                 startContent={<Send size={24} />}
                 onPress={handleSendDocument}
-                isDisabled={!file || !tipoDocumentosSelected}
+                isDisabled={!file || !tipoDocumentosSelected || !hasPermission("trabajadores.documentos.gestionar")}
               >
                 Subir
               </Button>
             </div>
           </DrawerFooter>
         )}
+        <Modal
+          isOpen={isCategoryModalOpen}
+          onOpenChange={setIsCategoryModalOpen}
+          placement="center"
+        >
+          <ModalContent>
+            {(onClose) => (
+              <>
+                <ModalHeader>Nueva categoría de documento</ModalHeader>
+                <ModalBody>
+                  <Input
+                    autoFocus
+                    label="Nombre"
+                    placeholder="Ej. Certificación SEC"
+                    value={newCategoryName}
+                    onValueChange={setNewCategoryName}
+                    maxLength={80}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && newCategoryName.trim().length >= 2) {
+                        event.preventDefault();
+                        void handleCreateDocumentCategory();
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-default-500">
+                    La categoría quedará disponible para los documentos de todos los trabajadores.
+                  </p>
+                </ModalBody>
+                <ModalFooter>
+                  <Button variant="light" onPress={onClose}>
+                    Cancelar
+                  </Button>
+                  <Button
+                    color="primary"
+                    isLoading={isCreatingCategory}
+                    isDisabled={newCategoryName.trim().length < 2}
+                    onPress={() => void handleCreateDocumentCategory()}
+                  >
+                    Crear categoría
+                  </Button>
+                </ModalFooter>
+              </>
+            )}
+          </ModalContent>
+        </Modal>
         {activeTab === "details" && (
           <DrawerFooter className="flex flex-col gap-4">
             <Button
               className="w-full p-2 gap-4 flex flex-row justify-center text-sm"
               onPress={() => worker && handleDelete(worker.Rut)}
+              isDisabled={!hasPermission("trabajadores.eliminar")}
               color="danger"
               variant="flat"
               size="lg"

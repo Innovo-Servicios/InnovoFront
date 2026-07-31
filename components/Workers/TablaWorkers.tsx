@@ -36,6 +36,8 @@ interface Worker {
   Rut: string;
   Nombre: string;
   cargo: string;
+  arquetipo?: string;
+  rol?: { id: string; nombre: string; arquetipo: string } | null;
   correo: string;
 }
 
@@ -78,10 +80,12 @@ export default function TablaWorkers() {
       };
     },
   });
+  const listRef = useRef(list);
+  listRef.current = list;
 
   useEffect(() => {
     if (token) {
-      list.reload();
+      listRef.current.reload();
     }
   }, [token]);
 
@@ -89,18 +93,18 @@ export default function TablaWorkers() {
     if (!socket) return;
 
     socket.on("nuevo-trabajador", (nuevoTrabajador) => {
-      list.append({ ...nuevoTrabajador });
+      listRef.current.append({ ...nuevoTrabajador });
     });
 
     socket.on("updateWorker", () => {
-      list.reload();
+      listRef.current.reload();
     });
 
     return () => {
       socket.off("nuevo-trabajador");
       socket.off("updateWorker");
     };
-  }, [socket, list]);
+  }, [socket]);
 
   useEffect(() => {
     const calculateItemsPerPage = () => {
@@ -147,12 +151,13 @@ export default function TablaWorkers() {
           item.Rut.toLowerCase().includes(lowerFilterValue) ||
           item.Nombre.toLowerCase().includes(lowerFilterValue) ||
           item.cargo.toLowerCase().includes(lowerFilterValue) ||
+          item.rol?.nombre.toLowerCase().includes(lowerFilterValue) ||
           item.correo.toLowerCase().includes(lowerFilterValue)
       );
     }
 
     if (statusFilter !== "all") {
-      filtered = filtered.filter((item) => item.cargo === statusFilter);
+      filtered = filtered.filter((item) => (item.arquetipo || item.cargo) === statusFilter);
     }
 
     return filtered;
@@ -215,7 +220,7 @@ export default function TablaWorkers() {
     
       <div className="shrink-0 flex items-center justify-between gap-3 px-4 pb-4">
         <Input
-          placeholder="Buscar por Rut, nombre, cargo o correo..."
+          placeholder="Buscar por RUT, nombre, rol o correo..."
           startContent={<Search size={18} />}
           value={filterValue}
           onValueChange={onSearchChange}
@@ -309,7 +314,7 @@ export default function TablaWorkers() {
                 borderColor: "white",
               }}
             >
-              CARGO
+              ROL
             </TableColumn>
             
             <TableColumn
@@ -341,7 +346,7 @@ export default function TablaWorkers() {
                 </TableCell>
             
                 <TableCell style={{ textAlign: "center", cursor: "pointer" }}>
-                  {item.cargo.charAt(0).toUpperCase() + item.cargo.slice(1)}
+                  {item.rol?.nombre || item.cargo.charAt(0).toUpperCase() + item.cargo.slice(1)}
                 </TableCell>
             
                 <TableCell style={{ textAlign: "center", cursor: "pointer" }}>

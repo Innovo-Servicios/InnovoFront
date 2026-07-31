@@ -42,6 +42,7 @@ interface Notification {
   contenido: string;
   fecha: string;
   requiereFirma?: boolean;
+  firmaAutomatica?: boolean;
 }
 
 interface NotificationWithKey extends Notification {
@@ -57,7 +58,14 @@ type DateRangeValue = {
   end: CalendarDate;
 };
 
-type QuickDateFilter = "today" | "last7" | "month" | "custom";
+type QuickDateFilter = "all" | "today" | "last7" | "month" | "custom";
+
+const TYPE_OPTIONS = [
+  { value: "Todos", label: "Todos" },
+  { value: "msg", label: "Mensajes" },
+  { value: "alert", label: "Alertas" },
+  { value: "document", label: "Documentos" },
+];
 
 const toCalendarDate = (date: Date) => {
   return parseDate(date.toISOString().split("T")[0]);
@@ -113,13 +121,6 @@ export default function NotificationTable({
 
   const itemsPerPage = 12;
 
-  const typeOptions = [
-    { value: "Todos", label: "Todos" },
-    { value: "msg", label: "Mensajes" },
-    { value: "alert", label: "Alertas" },
-    { value: "document", label: "Documentos" },
-  ];
-
   useEffect(() => {
     setDateRange(getTodayRange());
     setQuickDateFilter("today");
@@ -162,11 +163,14 @@ export default function NotificationTable({
     try {
       setIsLoading(true);
 
-      const datos_body = {
-        token,
-        inicio: dateRange.start.toString(),
-        fin: dateRange.end.toString(),
-      };
+      const datos_body =
+        quickDateFilter === "all"
+          ? { token, todas: true }
+          : {
+              token,
+              inicio: dateRange.start.toString(),
+              fin: dateRange.end.toString(),
+            };
 
       const response = await authenticatedFetch(`${URL}/notificaciones/buscarNotificacion`, {
         method: "POST",
@@ -184,7 +188,7 @@ export default function NotificationTable({
     } finally {
       setIsLoading(false);
     }
-  }, [authenticatedFetch, token, dateRange.start, dateRange.end]);
+  }, [authenticatedFetch, token, quickDateFilter, dateRange.start, dateRange.end]);
 
   useEffect(() => {
     if (!token) return;
@@ -244,7 +248,7 @@ export default function NotificationTable({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedType, dateRange]);
+  }, [searchQuery, selectedType, dateRange, quickDateFilter]);
 
   const handleSelectionChange = useCallback((keys: Set<string>) => {
     const updatedKeys = new Set(keys);
@@ -258,7 +262,7 @@ export default function NotificationTable({
       updatedKeys.delete("Todos");
     }
 
-    const allOtherSelected = typeOptions
+    const allOtherSelected = TYPE_OPTIONS
       .filter((option) => option.value !== "Todos")
       .every((option) => updatedKeys.has(option.value));
 
@@ -277,7 +281,7 @@ export default function NotificationTable({
   const getTypeButtonLabel = () => {
     if (selectedType.has("Todos")) return "Tipo";
 
-    const selectedLabels = typeOptions
+    const selectedLabels = TYPE_OPTIONS
       .filter((option) => selectedType.has(option.value))
       .map((option) => option.label);
 
@@ -359,7 +363,7 @@ export default function NotificationTable({
                   handleSelectionChange(new Set(keys as unknown as string[]))
                 }
               >
-                {typeOptions.map((type) => (
+                {TYPE_OPTIONS.map((type) => (
                   <DropdownItem key={type.value}>{type.label}</DropdownItem>
                 ))}
               </DropdownMenu>
@@ -378,6 +382,16 @@ export default function NotificationTable({
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant={quickDateFilter === "all" ? "solid" : "flat"}
+            color={quickDateFilter === "all" ? "primary" : "default"}
+            className="rounded-xl font-semibold"
+            onPress={() => applyQuickDateFilter("all")}
+          >
+            Todas
+          </Button>
+
           <Button
             size="sm"
             variant={quickDateFilter === "today" ? "solid" : "flat"}
@@ -494,7 +508,7 @@ export default function NotificationTable({
                 <TableCell>
                   {item.requiereFirma ? (
                     <Chip color="success" variant="flat">
-                      Firma
+                      {item.firmaAutomatica ? "Firma automática" : "Firma"}
                     </Chip>
                   ) : (
                     <Chip color="default" variant="flat">

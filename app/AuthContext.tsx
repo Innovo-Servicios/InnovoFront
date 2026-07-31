@@ -10,12 +10,18 @@ import React, {
 import { useRouter } from "next/navigation";
 import { URL } from "@/config/config";
 import { io, Socket } from "socket.io-client";
+import type { AccessSession } from "@/lib/accessControl";
 
 interface AuthContextType {
   token: string | null;
   setToken: (token: string | null) => void;
   socket: Socket | null;
   authReady: boolean;
+  accessReady: boolean;
+  session: AccessSession | null;
+  hasPermission: (permission: string) => boolean;
+  hasAnyPermission: (...permissions: string[]) => boolean;
+  reloadAccess: () => Promise<AccessSession | null>;
   refreshSession: () => Promise<string | null>;
   authenticatedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   logout: () => Promise<void>;
@@ -27,6 +33,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [accessReady, setAccessReady] = useState(false);
+  const [session, setSession] = useState<AccessSession | null>(null);
   const router = useRouter();
 
   const refreshSession = useCallback(async () => {
@@ -38,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!response.ok) {
         setToken(null);
+        setSession(null);
         return null;
       }
 
@@ -70,6 +79,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setSocket(null);
       setToken(null);
+      setSession(null);
+      setAccessReady(true);
       router.push("/");
     }
   }, [router, socket, token]);
@@ -108,6 +119,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [logout, refreshSession, token]
   );
 
+  const reloadAccess = useCallback(async () => {
+    if (!token) {
+      setSession(null);
+      setAccessReady(true);
+      return null;
+    }
+
+    setAccessReady(false);
+    try {
+      const response = await fetch(`${URL}/trabajador/sesion`, {
+        method: "GET",
+        credentials: "include",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        if (response.status === 401) setToken(null);
+        setSession(null);
+        return null;
+      }
+      const nextSession = (await response.json()) as AccessSession;
+      setSession(nextSession);
+      return nextSession;
+    } catch {
+      setSession(null);
+      return null;
+    } finally {
+      setAccessReady(true);
+    }
+  }, [token]);
+
+  const hasPermission = useCallback(
+    (permission: string) => session?.permisos.includes(permission) ?? false,
+    [session]
+  );
+
+  const hasAnyPermission = useCallback(
+    (...permissions: string[]) => permissions.some((permission) => hasPermission(permission)),
+    [hasPermission]
+  );
+
   useEffect(() => {
     let active = true;
 
@@ -123,11 +174,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refreshSession]);
 
   useEffect(() => {
+    reloadAccess();
+  }, [reloadAccess]);
+
+  useEffect(() => {
     if (!token) {
-      if (socket) {
-        socket.close();
-        setSocket(null);
-      }
+      setSocket((currentSocket) => {
+        currentSocket?.close();
+        return null;
+      });
       return;
     }
 
@@ -149,8 +204,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ws.on("connect_error", async () => {
       const refreshedToken = await refreshSession();
       if (!refreshedToken) {
-        await logout();
+        setToken(null);
+        setSession(null);
+        router.push("/");
       }
+    });
+
+    ws.on("control-acceso-actualizado", () => {
+      reloadAccess().finally(() => {
+        ws.disconnect();
+        ws.connect();
+      });
     });
 
     setSocket(ws);
@@ -158,10 +222,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       ws.close();
     };
-  }, [token]);
+  }, [refreshSession, reloadAccess, router, token]);
 
   return (
-    <AuthContext.Provider value={{ token, setToken, socket, authReady, refreshSession, authenticatedFetch, logout }}>
+    <AuthContext.Provider value={{ token, setToken, socket, authReady, accessReady, session, hasPermission, hasAnyPermission, reloadAccess, refreshSession, authenticatedFetch, logout }}>
       {children}
     </AuthContext.Provider>
   );

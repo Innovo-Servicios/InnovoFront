@@ -5,6 +5,7 @@ import NotificationTable from "@/components/Notification/NotificationTable";
 import NotificationADD from "@/components/Notification/NotificationADD";
 import NotificationModal from "@/components/Notification/NotificationModal";
 import layoutStyles from "@/styles/panelLayout.module.css";
+import { Can } from "@/components/access/Can";
 
 export default function Admin_Notification() {
   const [selectedNotification, setSelectedNotification] = useState<any>(null);
@@ -35,11 +36,11 @@ export default function Admin_Notification() {
         <NotificationTable onRowClick={handleRowClick} />
       </div>
 
-      <div className={layoutStyles.sidePanel}>
+      <Can permission="notificaciones.crear"><div className={layoutStyles.sidePanel}>
         <div className={layoutStyles.sideContent}>
           <NotificationADD />
         </div>
-      </div>
+      </div></Can>
     </div>
   );
 }

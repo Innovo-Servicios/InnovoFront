@@ -17,6 +17,7 @@ export default function AuthenticatedImage({
   filePath,
   downloadName,
   onClick,
+  alt,
   ...props
 }: AuthenticatedImageProps) {
   const { authenticatedFetch } = useAuth();
@@ -30,6 +31,7 @@ export default function AuthenticatedImage({
     <Image
       {...props}
       src={objectUrl}
+      alt={alt ?? downloadName ?? ""}
       onClick={(event) => {
         onClick?.(event);
         if (!downloadName) return;
