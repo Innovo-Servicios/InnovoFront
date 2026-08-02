@@ -44,6 +44,10 @@ export interface DigitalSigner {
   expiresAt?: string | null;
   firmadoAt?: string | null;
   aceptadoAt?: string | null;
+  codigoValidacion?: string | null;
+  documentoFirmadoUrl?: string | null;
+  documentoFirmadoNombre?: string | null;
+  verificacionUrl?: string | null;
 }
 
 export interface CompanyDocumentApproval {
@@ -137,6 +141,8 @@ export interface CompanyDocumentEvidence {
     estadoFirma: DigitalSigner["estado"];
     firmadoAt?: string | null;
     aceptadoAt?: string | null;
+    codigoValidacion?: string;
+    documentoFirmado?: string;
     vencimientoCodigo?: string | null;
     intentos: number;
   }>;
@@ -172,6 +178,11 @@ export interface CompanyDocument {
   requiereAprobacion: boolean;
   requiereFirmaDigital: boolean;
   responsableSistemaGestion: { nombre: string; cargo: string };
+  plantillaDocumental?: {
+    plantillaId?: string | null;
+    nombre: string;
+    version: number;
+  } | null;
   aprobaciones: CompanyDocumentApproval[];
   aprobacion: CompanyDocumentApprovalSummary;
   controlCambios: CompanyDocumentChange[];
@@ -190,6 +201,21 @@ export interface CompanyDocument {
   firmas: { completadas: number; total: number };
   firmasDigitales: CompanyDocumentDigitalSignatureSummary;
   historial?: CompanyDocument[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CompanyDocumentTemplate {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  contenido: string;
+  textoAceptacion: string;
+  codigoBase: string;
+  categoriaId?: string | null;
+  categoria?: CompanyDocumentCategory | null;
+  version: number;
+  activo: boolean;
   createdAt: string;
   updatedAt: string;
 }

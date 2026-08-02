@@ -26,6 +26,7 @@ import {
   Download,
   Eye,
   FileCheck2,
+  FilePlus2,
   Files,
   FolderPlus,
   History,
@@ -47,19 +48,24 @@ import {
   approveCompanyDocument,
   archiveCompanyDocument,
   archiveCompanyDocumentCategory,
+  archiveCompanyDocumentTemplate,
   createCompanyDocument,
   createCompanyDocumentCategory,
+  createCompanyDocumentTemplate,
   diffuseCompanyDocument,
   getCompanyDocument,
   getCompanyDocumentCandidates,
   getCompanyDocumentCategories,
   getCompanyDocumentChangeControl,
   getCompanyDocumentSummary,
+  getCompanyDocumentTemplates,
   getCompanyDocuments,
   removePhysicalSigner,
   renewCompanyDocument,
+  sendCompanyDocumentTemplate,
   updateCompanyDocument,
   updateCompanyDocumentCategory,
+  updateCompanyDocumentTemplate,
   updatePhysicalSigner,
 } from "@/api/adm/companyDocuments";
 import type {
@@ -69,6 +75,7 @@ import type {
   CompanyDocumentChangeControlItem,
   CompanyDocumentMatrixRelation,
   CompanyDocumentSummary,
+  CompanyDocumentTemplate,
   DigitalSigner,
   SignatureCandidates,
 } from "@/lib/companyDocuments";
@@ -202,6 +209,7 @@ export default function CompanyDocumentsPage() {
   const canManageWorkerDocuments = hasPermission("trabajadores.documentos.gestionar");
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<CompanyDocumentCategory[]>([]);
+  const [templates, setTemplates] = useState<CompanyDocumentTemplate[]>([]);
   const [documents, setDocuments] = useState<CompanyDocument[]>([]);
   const [summary, setSummary] = useState(EMPTY_SUMMARY);
   const [candidates, setCandidates] = useState<SignatureCandidates>({ trabajadores: [], roles: [] });
@@ -209,6 +217,7 @@ export default function CompanyDocumentsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const [bulkPersonalOpen, setBulkPersonalOpen] = useState(false);
   const [changeControlOpen, setChangeControlOpen] = useState(false);
   const [detail, setDetail] = useState<CompanyDocument | null>(null);
@@ -220,14 +229,16 @@ export default function CompanyDocumentsPage() {
       const params = new URLSearchParams({ limit: "100" });
       if (categoryFilter !== "all") params.set("categoria", categoryFilter);
       if (search.trim()) params.set("q", search.trim());
-      const [categoryItems, documentPage, nextSummary] = await Promise.all([
+      const [categoryItems, documentPage, nextSummary, templateItems] = await Promise.all([
         getCompanyDocumentCategories(authenticatedFetch),
         getCompanyDocuments(authenticatedFetch, params),
         getCompanyDocumentSummary(authenticatedFetch),
+        canManage ? getCompanyDocumentTemplates(authenticatedFetch) : Promise.resolve([]),
       ]);
       setCategories(categoryItems);
       setDocuments(documentPage.items);
       setSummary({ ...EMPTY_SUMMARY, ...nextSummary });
+      setTemplates(templateItems);
       if (canManageSignatures) {
         setCandidates(await getCompanyDocumentCandidates(authenticatedFetch));
       }
@@ -236,7 +247,7 @@ export default function CompanyDocumentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [authenticatedFetch, canManageSignatures, categoryFilter, search]);
+  }, [authenticatedFetch, canManage, canManageSignatures, categoryFilter, search]);
 
   useEffect(() => { void loadData(); }, [loadData]);
   useEffect(() => {
@@ -280,6 +291,11 @@ export default function CompanyDocumentsPage() {
             {canManageWorkerDocuments && (
               <Button color="secondary" variant="flat" startContent={<UsersRound size={18} />} onPress={() => setBulkPersonalOpen(true)}>
                 Personal a todos
+              </Button>
+            )}
+            {canManage && (
+              <Button variant="flat" startContent={<FilePlus2 size={18} />} onPress={() => setTemplatesOpen(true)}>
+                Plantillas
               </Button>
             )}
             {canManage && (
@@ -442,6 +458,19 @@ export default function CompanyDocumentsPage() {
         }}
       />
       <BulkPersonalDocumentUploadModal isOpen={bulkPersonalOpen} onClose={() => setBulkPersonalOpen(false)} />
+      <TemplatesModal
+        isOpen={templatesOpen}
+        onClose={() => setTemplatesOpen(false)}
+        templates={templates}
+        categories={categories.filter((category) => category.activo)}
+        authenticatedFetch={authenticatedFetch}
+        onSaved={loadData}
+        onSent={async (document) => {
+          setTemplatesOpen(false);
+          await loadData();
+          await openDetail(document.id);
+        }}
+      />
       <CategoryModal editor={categoryEditor} onClose={() => setCategoryEditor(null)} authenticatedFetch={authenticatedFetch} onSaved={loadData} />
       <ChangeControlModal isOpen={changeControlOpen} onClose={() => setChangeControlOpen(false)} authenticatedFetch={authenticatedFetch} />
       <DocumentDetailModal
@@ -521,6 +550,221 @@ function CategoryModal({
           <Button variant="light" onPress={onClose}>Cancelar</Button>
           <Button color="primary" isLoading={saving} isDisabled={name.trim().length < 2} onPress={() => void save()}>Guardar</Button>
         </ModalFooter>
+      </ModalContent>
+    </Modal>
+  );
+}
+
+function TemplatesModal({
+  isOpen,
+  onClose,
+  templates,
+  categories,
+  authenticatedFetch,
+  onSaved,
+  onSent,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  templates: CompanyDocumentTemplate[];
+  categories: CompanyDocumentCategory[];
+  authenticatedFetch: typeof fetch;
+  onSaved: () => Promise<void>;
+  onSent: (document: CompanyDocument) => Promise<void>;
+}) {
+  const [activeId, setActiveId] = useState<string>("new");
+  const selectedTemplate = templates.find((template) => template.id === activeId) || null;
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [content, setContent] = useState("");
+  const [acceptance, setAcceptance] = useState("");
+  const [codeBase, setCodeBase] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [sendTitle, setSendTitle] = useState("");
+  const [sendIssueDate, setSendIssueDate] = useState(new Date().toISOString().slice(0, 10));
+  const [sendExpiration, setSendExpiration] = useState("");
+  const [sendWarningDays, setSendWarningDays] = useState("30");
+  const [sendScope, setSendScope] = useState("Todos los trabajadores");
+  const [saving, setSaving] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (templates.length > 0 && activeId !== "new" && !templates.some((template) => template.id === activeId)) {
+      setActiveId(templates[0].id);
+    }
+  }, [activeId, isOpen, templates]);
+
+  useEffect(() => {
+    if (selectedTemplate) {
+      setName(selectedTemplate.nombre);
+      setDescription(selectedTemplate.descripcion);
+      setContent(selectedTemplate.contenido);
+      setAcceptance(selectedTemplate.textoAceptacion);
+      setCodeBase(selectedTemplate.codigoBase);
+      setCategoryId(selectedTemplate.categoriaId || "");
+      setSendTitle(selectedTemplate.nombre);
+      setSendScope("Todos los trabajadores");
+      return;
+    }
+    setName("");
+    setDescription("");
+    setContent("Yo, {{trabajador.nombre}}, RUT {{trabajador.rut}}, declaro recibir y conocer el documento {{documento.titulo}} version {{documento.version}}.");
+    setAcceptance("Declaro haber recibido, leido, comprendido y aceptado el contenido de este documento.");
+    setCodeBase("");
+    setCategoryId("");
+    setSendTitle("");
+    setSendScope("Todos los trabajadores");
+  }, [selectedTemplate]);
+
+  const save = async () => {
+    if (name.trim().length < 2 || content.trim().length < 10) return;
+    setSaving(true);
+    try {
+      const body = {
+        nombre: name,
+        descripcion: description,
+        contenido: content,
+        textoAceptacion: acceptance,
+        codigoBase: codeBase,
+        categoriaId: categoryId,
+      };
+      const saved = selectedTemplate
+        ? await updateCompanyDocumentTemplate(authenticatedFetch, selectedTemplate.id, body)
+        : await createCompanyDocumentTemplate(authenticatedFetch, body);
+      setActiveId(saved.id);
+      await onSaved();
+      sileo.success({ title: "Plantilla guardada" });
+    } catch (error) {
+      sileo.error({ title: "No se pudo guardar la plantilla", description: error instanceof Error ? error.message : undefined });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const archive = async () => {
+    if (!selectedTemplate || !confirm("La plantilla se archivará, pero los documentos ya enviados se conservarán.")) return;
+    setSaving(true);
+    try {
+      await archiveCompanyDocumentTemplate(authenticatedFetch, selectedTemplate.id);
+      setActiveId("new");
+      await onSaved();
+      sileo.success({ title: "Plantilla archivada" });
+    } catch (error) {
+      sileo.error({ title: "No se pudo archivar", description: error instanceof Error ? error.message : undefined });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const send = async () => {
+    if (!selectedTemplate || !categoryId) return;
+    setSending(true);
+    try {
+      const result = await sendCompanyDocumentTemplate(authenticatedFetch, selectedTemplate.id, {
+        titulo: sendTitle || selectedTemplate.nombre,
+        descripcion: description,
+        categoriaId: categoryId,
+        codigoBase: codeBase,
+        fechaEmision: sendIssueDate,
+        fechaVencimiento: sendExpiration,
+        diasAviso: Number(sendWarningDays) || 30,
+        responsableNombre: RESPONSIBLE_DEFAULT.nombre,
+        responsableCargo: RESPONSIBLE_DEFAULT.cargo,
+        alcanceDescripcion: sendScope,
+      });
+      sileo.success({ title: "Plantilla enviada", description: result.message });
+      await onSent(result.document);
+    } catch (error) {
+      sileo.error({ title: "No se pudo enviar", description: error instanceof Error ? error.message : undefined });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const variables = [
+    "{{trabajador.nombre}}",
+    "{{trabajador.rut}}",
+    "{{trabajador.cargo}}",
+    "{{documento.titulo}}",
+    "{{documento.codigo}}",
+    "{{documento.version}}",
+    "{{firma.codigo}}",
+    "{{firma.fecha}}",
+  ];
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} size="5xl" scrollBehavior="inside" classNames={{ base: "w-[94vw] !max-w-[1400px] max-h-[94vh]" }}>
+      <ModalContent>
+        <ModalHeader>Plantillas documentales</ModalHeader>
+        <ModalBody className="grid gap-4 lg:grid-cols-[300px_1fr]">
+          <aside className="space-y-2">
+            <Button fullWidth color={activeId === "new" ? "primary" : "default"} variant={activeId === "new" ? "solid" : "flat"} onPress={() => setActiveId("new")}>
+              Nueva plantilla
+            </Button>
+            <div className="max-h-[560px] space-y-2 overflow-y-auto pr-1">
+              {templates.map((template) => (
+                <button
+                  key={template.id}
+                  onClick={() => setActiveId(template.id)}
+                  className={`w-full rounded-xl border p-3 text-left text-sm ${activeId === template.id ? "border-primary bg-primary-50 text-primary" : "border-slate-200 hover:bg-slate-50"}`}
+                >
+                  <p className="font-semibold">{template.nombre}</p>
+                  <p className="text-xs text-slate-500">v{template.version} {template.categoria?.nombre ? `· ${template.categoria.nombre}` : ""}</p>
+                </button>
+              ))}
+            </div>
+          </aside>
+
+          <div className="space-y-4">
+            <section className="rounded-xl border border-slate-200 p-4">
+              <h3 className="mb-3 font-bold">Contenido</h3>
+              <div className="grid gap-3 md:grid-cols-2">
+                <Input label="Nombre" value={name} onValueChange={setName} />
+                <Input label="Código base" value={codeBase} onValueChange={setCodeBase} placeholder="Opcional" />
+                <Select label="Categoría sugerida" selectedKeys={categoryId ? [categoryId] : []} onChange={(event) => setCategoryId(event.target.value)}>
+                  {categories.map((category) => <SelectItem key={category.id}>{category.nombre}</SelectItem>)}
+                </Select>
+                <Input label="Descripción" value={description} onValueChange={setDescription} />
+              </div>
+              <Textarea className="mt-3" minRows={8} label="Texto de plantilla" value={content} onValueChange={setContent} />
+              <Textarea className="mt-3" minRows={3} label="Texto de aceptación" value={acceptance} onValueChange={setAcceptance} />
+              <div className="mt-3 flex flex-wrap gap-2">
+                {variables.map((variable) => <Chip key={variable} size="sm" variant="flat">{variable}</Chip>)}
+              </div>
+              <div className="mt-3 flex flex-wrap justify-end gap-2">
+                {selectedTemplate && (
+                  <Button color="danger" variant="light" isLoading={saving} onPress={() => void archive()}>
+                    Archivar
+                  </Button>
+                )}
+                <Button color="primary" isLoading={saving} isDisabled={name.trim().length < 2 || content.trim().length < 10} onPress={() => void save()}>
+                  Guardar plantilla
+                </Button>
+              </div>
+            </section>
+
+            {selectedTemplate && (
+              <section className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+                <h3 className="mb-3 flex items-center gap-2 font-bold"><Send size={17} /> Enviar con firma por código</h3>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Input label="Título del documento" value={sendTitle} onValueChange={setSendTitle} />
+                  <Select label="Categoría documental" selectedKeys={categoryId ? [categoryId] : []} onChange={(event) => setCategoryId(event.target.value)}>
+                    {categories.map((category) => <SelectItem key={category.id}>{category.nombre}</SelectItem>)}
+                  </Select>
+                  <Input type="date" label="Fecha de emisión" value={sendIssueDate} onValueChange={setSendIssueDate} />
+                  <Input type="date" label="Fecha de vencimiento" value={sendExpiration} onValueChange={setSendExpiration} />
+                  <Input type="number" min={1} max={365} label="Avisar con anticipación" value={sendWarningDays} onValueChange={setSendWarningDays} />
+                  <Input label="Alcance" value={sendScope} onValueChange={setSendScope} />
+                </div>
+                <Button className="mt-3" color="success" isLoading={sending} isDisabled={!categoryId} startContent={<Send size={16} />} onPress={() => void send()}>
+                  Enviar a todos los trabajadores
+                </Button>
+              </section>
+            )}
+          </div>
+        </ModalBody>
+        <ModalFooter><Button variant="light" onPress={onClose}>Cerrar</Button></ModalFooter>
       </ModalContent>
     </Modal>
   );
@@ -1129,8 +1373,25 @@ function DiffusionPanel({
                 <p className="font-semibold">{signer.nombre}</p>
                 <p className="text-xs text-slate-500">{signer.rut} · {signer.cargo || "Sin cargo"}</p>
                 <p className="text-xs text-slate-500">Visto/firma: {formatDateTime(signer.aceptadoAt || signer.firmadoAt)}</p>
+                {signer.codigoValidacion && <p className="text-xs font-semibold text-emerald-700">Código: {signer.codigoValidacion}</p>}
               </div>
-              <Chip size="sm" color={signatureColor(signer.estado)} variant="flat">{signer.estado}</Chip>
+              <div className="flex flex-col items-end gap-2">
+                <Chip size="sm" color={signatureColor(signer.estado)} variant="flat">{signer.estado}</Chip>
+                {signer.documentoFirmadoUrl && (
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    startContent={<Download size={14} />}
+                    onPress={() => void downloadAuthenticatedFile(
+                      authenticatedFetch,
+                      signer.documentoFirmadoUrl || "",
+                      signer.documentoFirmadoNombre || `firmado-${signer.rut}.pdf`
+                    )}
+                  >
+                    Firmado
+                  </Button>
+                )}
+              </div>
             </div>
           ))}
         </div>

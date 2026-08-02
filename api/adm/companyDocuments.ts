@@ -5,6 +5,7 @@ import type {
   CompanyDocumentChangeControlItem,
   CompanyDocumentEvidence,
   CompanyDocumentSummary,
+  CompanyDocumentTemplate,
   SignatureCandidates,
 } from "@/lib/companyDocuments";
 
@@ -44,6 +45,62 @@ export const getCompanyDocumentSummary = (fetcher: Fetcher) =>
 
 export const getCompanyDocumentCandidates = (fetcher: Fetcher) =>
   request<SignatureCandidates>(fetcher, "/documentoEmpresa/firmantes/candidatos");
+
+export const getCompanyDocumentTemplates = (fetcher: Fetcher) =>
+  request<CompanyDocumentTemplate[]>(fetcher, "/documentoEmpresa/plantillas");
+
+export const createCompanyDocumentTemplate = (
+  fetcher: Fetcher,
+  body: {
+    nombre: string;
+    descripcion?: string;
+    contenido: string;
+    textoAceptacion?: string;
+    codigoBase?: string;
+    categoriaId?: string;
+  }
+) =>
+  request<CompanyDocumentTemplate>(fetcher, "/documentoEmpresa/plantillas", { method: "POST", body: JSON.stringify(body) });
+
+export const updateCompanyDocumentTemplate = (
+  fetcher: Fetcher,
+  id: string,
+  body: {
+    nombre: string;
+    descripcion?: string;
+    contenido: string;
+    textoAceptacion?: string;
+    codigoBase?: string;
+    categoriaId?: string;
+  }
+) =>
+  request<CompanyDocumentTemplate>(fetcher, `/documentoEmpresa/plantillas/${id}`, { method: "PUT", body: JSON.stringify(body) });
+
+export const archiveCompanyDocumentTemplate = (fetcher: Fetcher, id: string) =>
+  request<void>(fetcher, `/documentoEmpresa/plantillas/${id}`, { method: "DELETE" });
+
+export const sendCompanyDocumentTemplate = (
+  fetcher: Fetcher,
+  id: string,
+  body: {
+    titulo?: string;
+    descripcion?: string;
+    categoriaId: string;
+    codigoBase?: string;
+    fechaEmision?: string;
+    fechaVencimiento?: string;
+    diasAviso?: number;
+    responsableNombre?: string;
+    responsableCargo?: string;
+    alcanceDescripcion?: string;
+    motivoCambio?: string;
+  }
+) =>
+  request<{ message: string; document: CompanyDocument; codigos: Array<{ trabajadorId: string; rut: string; nombre: string; code: string }> }>(
+    fetcher,
+    `/documentoEmpresa/plantillas/${id}/enviar`,
+    { method: "POST", body: JSON.stringify(body) }
+  );
 
 export const createCompanyDocument = (fetcher: Fetcher, body: FormData) =>
   request<CompanyDocument>(fetcher, "/documentoEmpresa", { method: "POST", body });
