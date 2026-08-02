@@ -9,6 +9,8 @@ type AuthenticatedFetch = (
 ) => Promise<Response>;
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, "");
+const trimSlashes = (value: string) => value.replace(/^\/+|\/+$/g, "");
+const isHttpUrl = (value: string) => /^https?:\/\//i.test(value);
 
 const getFileNameFromDisposition = (header: string | null) => {
   if (!header) return null;
@@ -46,16 +48,45 @@ export const buildApiFileUrl = (filePath?: string | null) => {
 
   const legacyAssetPath = getLegacyAssetPath(rawPath);
   const normalizedPath = legacyAssetPath || rawPath;
+  const apiBase = String(API_URL || "").trim();
+
+  if (!isHttpUrl(apiBase)) {
+    if (isHttpUrl(normalizedPath)) {
+      try {
+        const parsedUrl = new globalThis.URL(normalizedPath);
+        if (globalThis.location?.origin && parsedUrl.origin !== globalThis.location.origin) {
+          return null;
+        }
+        return `${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`;
+      } catch {
+        return null;
+      }
+    }
+
+    const relativeBase = trimSlashes(apiBase);
+    const relativePath = normalizedPath.startsWith("/")
+      ? normalizedPath
+      : `/${normalizedPath}`;
+
+    if (!relativeBase) {
+      return relativePath;
+    }
+
+    const basePrefix = `/${relativeBase}`;
+    return relativePath === basePrefix || relativePath.startsWith(`${basePrefix}/`)
+      ? relativePath
+      : `${basePrefix}${relativePath}`;
+  }
 
   try {
-    const apiBase = new globalThis.URL(trimTrailingSlash(API_URL));
-    const parsedUrl = new globalThis.URL(normalizedPath, `${apiBase.origin}/`);
+    const apiUrl = new globalThis.URL(trimTrailingSlash(apiBase));
+    const parsedUrl = new globalThis.URL(normalizedPath, `${apiUrl.origin}/`);
 
     if (!["http:", "https:"].includes(parsedUrl.protocol)) {
       return null;
     }
 
-    if (parsedUrl.origin !== apiBase.origin) {
+    if (parsedUrl.origin !== apiUrl.origin) {
       return null;
     }
 
