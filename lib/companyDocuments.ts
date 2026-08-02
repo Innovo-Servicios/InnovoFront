@@ -182,6 +182,7 @@ export interface CompanyDocument {
     plantillaId?: string | null;
     nombre: string;
     version: number;
+    variablesDetectadas?: string[];
   } | null;
   aprobaciones: CompanyDocumentApproval[];
   aprobacion: CompanyDocumentApprovalSummary;
@@ -210,11 +211,19 @@ export interface CompanyDocumentTemplate {
   nombre: string;
   descripcion: string;
   contenido: string;
+  contenidoHtml: string;
   textoAceptacion: string;
   codigoBase: string;
   categoriaId?: string | null;
   categoria?: CompanyDocumentCategory | null;
   version: number;
+  archivoBase?: {
+    nombreOriginal?: string;
+    mimeType?: string;
+    tamano?: number;
+    importadoAt?: string;
+  } | null;
+  variablesDetectadas?: string[];
   activo: boolean;
   createdAt: string;
   updatedAt: string;

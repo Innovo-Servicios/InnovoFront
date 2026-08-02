@@ -55,9 +55,11 @@ export const createCompanyDocumentTemplate = (
     nombre: string;
     descripcion?: string;
     contenido: string;
+    contenidoHtml?: string;
     textoAceptacion?: string;
     codigoBase?: string;
     categoriaId?: string;
+    archivoBase?: CompanyDocumentTemplate["archivoBase"];
   }
 ) =>
   request<CompanyDocumentTemplate>(fetcher, "/documentoEmpresa/plantillas", { method: "POST", body: JSON.stringify(body) });
@@ -69,15 +71,49 @@ export const updateCompanyDocumentTemplate = (
     nombre: string;
     descripcion?: string;
     contenido: string;
+    contenidoHtml?: string;
     textoAceptacion?: string;
     codigoBase?: string;
     categoriaId?: string;
+    archivoBase?: CompanyDocumentTemplate["archivoBase"];
   }
 ) =>
   request<CompanyDocumentTemplate>(fetcher, `/documentoEmpresa/plantillas/${id}`, { method: "PUT", body: JSON.stringify(body) });
 
 export const archiveCompanyDocumentTemplate = (fetcher: Fetcher, id: string) =>
   request<void>(fetcher, `/documentoEmpresa/plantillas/${id}`, { method: "DELETE" });
+
+export const importCompanyDocumentTemplateDocx = (fetcher: Fetcher, body: FormData) =>
+  request<{
+    nombre: string;
+    contenido: string;
+    contenidoHtml: string;
+    variablesDetectadas: string[];
+    archivoBase: NonNullable<CompanyDocumentTemplate["archivoBase"]>;
+    advertencias: string[];
+  }>(fetcher, "/documentoEmpresa/plantillas/importar", { method: "POST", body });
+
+export const previewCompanyDocumentTemplate = (
+  fetcher: Fetcher,
+  body: {
+    nombre: string;
+    contenido: string;
+    contenidoHtml?: string;
+    textoAceptacion?: string;
+    codigoBase?: string;
+    titulo?: string;
+    categoriaNombre?: string;
+    fechaEmision?: string;
+    fechaVencimiento?: string;
+    responsableNombre?: string;
+    responsableCargo?: string;
+  }
+) =>
+  request<{ html: string; variablesDetectadas: string[] }>(
+    fetcher,
+    "/documentoEmpresa/plantillas/preview",
+    { method: "POST", body: JSON.stringify(body) }
+  );
 
 export const sendCompanyDocumentTemplate = (
   fetcher: Fetcher,

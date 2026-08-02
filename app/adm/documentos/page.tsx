@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Autocomplete,
   AutocompleteItem,
@@ -21,20 +21,25 @@ import {
 } from "@heroui/react";
 import {
   Archive,
+  Bold,
   CheckCircle2,
   ClipboardCheck,
+  FileUp,
   Download,
   Eye,
   FileCheck2,
   FilePlus2,
   Files,
   FolderPlus,
+  Heading2,
   History,
+  List,
   Pencil,
   RefreshCw,
   Search,
   Send,
   ShieldCheck,
+  Table2,
   Trash2,
   Upload,
   UserPlus,
@@ -60,6 +65,8 @@ import {
   getCompanyDocumentSummary,
   getCompanyDocumentTemplates,
   getCompanyDocuments,
+  importCompanyDocumentTemplateDocx,
+  previewCompanyDocumentTemplate,
   removePhysicalSigner,
   renewCompanyDocument,
   sendCompanyDocumentTemplate,
@@ -574,12 +581,16 @@ function TemplatesModal({
 }) {
   const [activeId, setActiveId] = useState<string>("new");
   const selectedTemplate = templates.find((template) => template.id === activeId) || null;
+  const editorRef = useRef<HTMLDivElement | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [content, setContent] = useState("");
+  const [contentHtml, setContentHtml] = useState("");
   const [acceptance, setAcceptance] = useState("");
   const [codeBase, setCodeBase] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  const [baseFile, setBaseFile] = useState<CompanyDocumentTemplate["archivoBase"]>(null);
+  const [previewHtml, setPreviewHtml] = useState("");
   const [sendTitle, setSendTitle] = useState("");
   const [sendIssueDate, setSendIssueDate] = useState(new Date().toISOString().slice(0, 10));
   const [sendExpiration, setSendExpiration] = useState("");
@@ -587,6 +598,8 @@ function TemplatesModal({
   const [sendScope, setSendScope] = useState("Todos los trabajadores");
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -595,27 +608,139 @@ function TemplatesModal({
     }
   }, [activeId, isOpen, templates]);
 
+  const plainTextToHtml = useCallback((value: string) => value
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((paragraph) => `<p>${paragraph.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>")}</p>`)
+    .join(""), []);
+
+  const loadEditorHtml = useCallback((html: string, plainText?: string) => {
+    const nextHtml = html || plainTextToHtml(plainText || "");
+    setContentHtml(nextHtml);
+    setContent(plainText || "");
+    if (editorRef.current) editorRef.current.innerHTML = nextHtml;
+  }, [plainTextToHtml]);
+
   useEffect(() => {
     if (selectedTemplate) {
       setName(selectedTemplate.nombre);
       setDescription(selectedTemplate.descripcion);
       setContent(selectedTemplate.contenido);
+      setContentHtml(selectedTemplate.contenidoHtml || plainTextToHtml(selectedTemplate.contenido));
       setAcceptance(selectedTemplate.textoAceptacion);
       setCodeBase(selectedTemplate.codigoBase);
       setCategoryId(selectedTemplate.categoriaId || "");
+      setBaseFile(selectedTemplate.archivoBase || null);
       setSendTitle(selectedTemplate.nombre);
       setSendScope("Todos los trabajadores");
+      queueMicrotask(() => loadEditorHtml(selectedTemplate.contenidoHtml || plainTextToHtml(selectedTemplate.contenido), selectedTemplate.contenido));
       return;
     }
+    const defaultContent = "Yo, {{trabajador.nombre}}, RUT {{trabajador.rut}}, declaro recibir y conocer el documento {{documento.titulo}} version {{documento.version}}.";
     setName("");
     setDescription("");
-    setContent("Yo, {{trabajador.nombre}}, RUT {{trabajador.rut}}, declaro recibir y conocer el documento {{documento.titulo}} version {{documento.version}}.");
+    setContent(defaultContent);
+    setContentHtml(plainTextToHtml(defaultContent));
     setAcceptance("Declaro haber recibido, leido, comprendido y aceptado el contenido de este documento.");
     setCodeBase("");
     setCategoryId("");
+    setBaseFile(null);
     setSendTitle("");
     setSendScope("Todos los trabajadores");
-  }, [selectedTemplate]);
+    queueMicrotask(() => loadEditorHtml(plainTextToHtml(defaultContent), defaultContent));
+  }, [loadEditorHtml, plainTextToHtml, selectedTemplate]);
+
+  const syncEditor = () => {
+    const html = editorRef.current?.innerHTML || "";
+    const text = editorRef.current?.innerText || "";
+    setContentHtml(html);
+    setContent(text.trim());
+  };
+
+  const runEditorCommand = (command: string, value?: string) => {
+    editorRef.current?.focus();
+    globalThis.document.execCommand(command, false, value);
+    syncEditor();
+  };
+
+  const insertVariable = (variable: string) => {
+    editorRef.current?.focus();
+    globalThis.document.execCommand("insertText", false, variable);
+    syncEditor();
+  };
+
+  const insertTable = () => {
+    editorRef.current?.focus();
+    globalThis.document.execCommand(
+      "insertHTML",
+      false,
+      '<table><tbody><tr><th>Campo</th><th>Detalle</th></tr><tr><td>{{trabajador.nombre}}</td><td>{{documento.titulo}}</td></tr></tbody></table><p><br></p>'
+    );
+    syncEditor();
+  };
+
+  const detectedVariables = useMemo(() => Array.from(new Set(
+    `${contentHtml}\n${content}\n${acceptance}`
+      .match(/\{\{\s*[a-zA-Z0-9_.-]+\s*\}\}/g)
+      ?.map((match) => match.replace(/[{}]/g, "").trim())
+      .filter(Boolean) || []
+  )).sort((left, right) => left.localeCompare(right, "es")), [acceptance, content, contentHtml]);
+
+  useEffect(() => {
+    if (!isOpen || content.length < 10) {
+      setPreviewHtml("");
+      return;
+    }
+    let cancelled = false;
+    const timeout = window.setTimeout(() => {
+      setPreviewing(true);
+      previewCompanyDocumentTemplate(authenticatedFetch, {
+        nombre: name || "Vista previa",
+        contenido: content,
+        contenidoHtml: contentHtml,
+        textoAceptacion: acceptance,
+        codigoBase: codeBase,
+        titulo: sendTitle || name,
+        categoriaNombre: categories.find((category) => category.id === categoryId)?.nombre || "",
+        fechaEmision: sendIssueDate,
+        fechaVencimiento: sendExpiration,
+        responsableNombre: RESPONSIBLE_DEFAULT.nombre,
+        responsableCargo: RESPONSIBLE_DEFAULT.cargo,
+      })
+        .then((result) => {
+          if (!cancelled) setPreviewHtml(result.html);
+        })
+        .catch(() => {
+          if (!cancelled) setPreviewHtml("");
+        })
+        .finally(() => {
+          if (!cancelled) setPreviewing(false);
+        });
+    }, 450);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [acceptance, authenticatedFetch, categories, categoryId, codeBase, content, contentHtml, isOpen, name, sendExpiration, sendIssueDate, sendTitle]);
+
+  const importDocx = async (file?: File | null) => {
+    if (!file) return;
+    setImporting(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const imported = await importCompanyDocumentTemplateDocx(authenticatedFetch, form);
+      if (!name.trim()) setName(imported.nombre);
+      setBaseFile(imported.archivoBase);
+      loadEditorHtml(imported.contenidoHtml, imported.contenido);
+      sileo.success({ title: "Plantilla importada" });
+    } catch (error) {
+      sileo.error({ title: "No se pudo importar DOCX", description: error instanceof Error ? error.message : undefined });
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const save = async () => {
     if (name.trim().length < 2 || content.trim().length < 10) return;
@@ -625,9 +750,11 @@ function TemplatesModal({
         nombre: name,
         descripcion: description,
         contenido: content,
+        contenidoHtml: contentHtml,
         textoAceptacion: acceptance,
         codigoBase: codeBase,
         categoriaId: categoryId,
+        archivoBase: baseFile,
       };
       const saved = selectedTemplate
         ? await updateCompanyDocumentTemplate(authenticatedFetch, selectedTemplate.id, body)
@@ -718,7 +845,18 @@ function TemplatesModal({
 
           <div className="space-y-4">
             <section className="rounded-xl border border-slate-200 p-4">
-              <h3 className="mb-3 font-bold">Contenido</h3>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="font-bold">Contenido</h3>
+                <Input
+                  className="max-w-xs"
+                  type="file"
+                  accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  label="Subir plantilla DOCX"
+                  isDisabled={importing}
+                  startContent={<FileUp size={16} />}
+                  onChange={(event) => void importDocx(event.target.files?.[0])}
+                />
+              </div>
               <div className="grid gap-3 md:grid-cols-2">
                 <Input label="Nombre" value={name} onValueChange={setName} />
                 <Input label="Código base" value={codeBase} onValueChange={setCodeBase} placeholder="Opcional" />
@@ -727,11 +865,56 @@ function TemplatesModal({
                 </Select>
                 <Input label="Descripción" value={description} onValueChange={setDescription} />
               </div>
-              <Textarea className="mt-3" minRows={8} label="Texto de plantilla" value={content} onValueChange={setContent} />
+
+              <div className="mt-3 rounded-xl border border-slate-200">
+                <div className="flex flex-wrap gap-1 border-b border-slate-200 bg-slate-50 p-2">
+                  <Button size="sm" isIconOnly variant="light" aria-label="Texto normal" onPress={() => runEditorCommand("formatBlock", "p")}>
+                    <span className="text-sm font-bold">P</span>
+                  </Button>
+                  <Button size="sm" isIconOnly variant="light" aria-label="Título" onPress={() => runEditorCommand("formatBlock", "h2")}>
+                    <Heading2 size={16} />
+                  </Button>
+                  <Button size="sm" isIconOnly variant="light" aria-label="Negrita" onPress={() => runEditorCommand("bold")}>
+                    <Bold size={16} />
+                  </Button>
+                  <Button size="sm" isIconOnly variant="light" aria-label="Lista" onPress={() => runEditorCommand("insertUnorderedList")}>
+                    <List size={16} />
+                  </Button>
+                  <Button size="sm" isIconOnly variant="light" aria-label="Tabla" onPress={insertTable}>
+                    <Table2 size={16} />
+                  </Button>
+                  <Select
+                    size="sm"
+                    className="min-w-48 max-w-64"
+                    label="Variable"
+                    selectedKeys={[]}
+                    onChange={(event) => insertVariable(event.target.value)}
+                  >
+                    {variables.map((variable) => <SelectItem key={variable}>{variable}</SelectItem>)}
+                  </Select>
+                </div>
+                <div
+                  ref={editorRef}
+                  className="min-h-[280px] overflow-auto bg-white p-4 text-sm leading-6 outline-none [&_h1]:mb-3 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mb-2 [&_h2]:text-xl [&_h2]:font-bold [&_h3]:mb-2 [&_h3]:text-lg [&_h3]:font-bold [&_li]:ml-5 [&_table]:my-3 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-slate-300 [&_td]:p-2 [&_th]:border [&_th]:border-slate-300 [&_th]:bg-slate-100 [&_th]:p-2"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onInput={syncEditor}
+                  onBlur={syncEditor}
+                />
+              </div>
+
               <Textarea className="mt-3" minRows={3} label="Texto de aceptación" value={acceptance} onValueChange={setAcceptance} />
               <div className="mt-3 flex flex-wrap gap-2">
                 {variables.map((variable) => <Chip key={variable} size="sm" variant="flat">{variable}</Chip>)}
               </div>
+              {detectedVariables.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {detectedVariables.map((variable) => <Chip key={variable} size="sm" color="success" variant="flat">{variable}</Chip>)}
+                </div>
+              )}
+              {baseFile?.nombreOriginal && (
+                <p className="mt-3 text-xs text-slate-500">Base: {baseFile.nombreOriginal}</p>
+              )}
               <div className="mt-3 flex flex-wrap justify-end gap-2">
                 {selectedTemplate && (
                   <Button color="danger" variant="light" isLoading={saving} onPress={() => void archive()}>
@@ -742,6 +925,20 @@ function TemplatesModal({
                   Guardar plantilla
                 </Button>
               </div>
+            </section>
+
+            <section className="rounded-xl border border-slate-200 p-4">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h3 className="font-bold">Vista previa</h3>
+                {previewing && <Spinner size="sm" />}
+              </div>
+              {previewHtml ? (
+                <iframe title="Vista previa de plantilla" srcDoc={previewHtml} sandbox="" className="h-[560px] w-full rounded-xl border border-slate-200 bg-white" />
+              ) : (
+                <div className="grid h-64 place-items-center rounded-xl bg-slate-100 text-sm text-slate-500">
+                  Vista previa no disponible
+                </div>
+              )}
             </section>
 
             {selectedTemplate && (
