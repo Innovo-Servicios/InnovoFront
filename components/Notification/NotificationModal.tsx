@@ -56,6 +56,8 @@ interface ValidationItem extends Follow {
   expiresAt?: string | null;
   firmadoAt?: string | null;
   aceptadoAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
   intentos?: number;
 }
 
@@ -102,6 +104,23 @@ const formatDateTime = (value?: string | null) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleString("es-CL");
+};
+
+const formatStoredDateTime = (value?: string | null) => {
+  if (!value) return "-";
+
+  const trimmed = String(value).trim();
+  const isoMatch = trimmed.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/
+  );
+
+  if (isoMatch) {
+    return `${isoMatch[3]}-${isoMatch[2]}-${isoMatch[1]} ${isoMatch[4]}:${
+      isoMatch[5]
+    }:${isoMatch[6] || "00"}`;
+  }
+
+  return formatDateTime(trimmed);
 };
 
 const formatDateOnly = (value?: string | null) => {
@@ -213,6 +232,40 @@ const calculateProgressPercent = (
   return total > 0 ? Number(((vistos.length / total) * 100).toFixed(1)) : 0;
 };
 
+const pickLatestStoredDate = (values: Array<string | null | undefined>) => {
+  const validValues = values.filter(Boolean) as string[];
+
+  if (validValues.length === 0) return null;
+
+  return validValues.reduce((latest, current) => {
+    const latestTime = new Date(latest).getTime();
+    const currentTime = new Date(current).getTime();
+
+    if (Number.isNaN(latestTime)) return current;
+    if (Number.isNaN(currentTime)) return latest;
+
+    return currentTime > latestTime ? current : latest;
+  });
+};
+
+const getSignatureStoredDateTime = (item: ValidationItem) => {
+  if (item.estado === "aceptado") {
+    return (
+      pickLatestStoredDate([item.aceptadoAt, item.firmadoAt]) ||
+      pickLatestStoredDate([item.updatedAt, item.createdAt])
+    );
+  }
+
+  if (item.estado === "firmado") {
+    return (
+      pickLatestStoredDate([item.firmadoAt, item.aceptadoAt]) ||
+      pickLatestStoredDate([item.updatedAt, item.createdAt])
+    );
+  }
+
+  return null;
+};
+
 const renderPdfSimpleList = (items: Follow[]) => {
   if (items.length === 0) return '<p class="empty">Sin registros.</p>';
 
@@ -235,10 +288,20 @@ const renderPdfValidationList = (
       items.length > 0
         ? `<div class="worker-list">${items
             .map(
-              (item) => `
+              (item) => {
+                const signatureStoredAt = getSignatureStoredDateTime(item);
+
+                return `
                 <div class="worker-row">
                   <p class="worker-name">${escapeHtml(item.nombre)}</p>
                   <p class="muted">${escapeHtml(item.rut)}</p>
+                  ${
+                    signatureStoredAt
+                      ? `<p class="muted">Fecha y hora firma: ${escapeHtml(
+                          formatStoredDateTime(signatureStoredAt)
+                        )}</p>`
+                      : ""
+                  }
                   ${
                     item.expiresAt
                       ? `<p class="muted">Vence: ${escapeHtml(
@@ -248,7 +311,8 @@ const renderPdfValidationList = (
                         )}</p>`
                       : ""
                   }
-                </div>`
+                </div>`;
+              }
             )
             .join("")}</div>`
         : '<p class="empty">Sin registros.</p>'
@@ -603,41 +667,50 @@ export default function NotificationModal({
         <Divider />
         {items.length > 0 ? (
           <ul className="space-y-2">
-            {items.map((item) => (
-              <li
-                key={`${title}-${item.trabajadorId || item.rut}`}
-                className="rounded-xl bg-slate-50 px-3 py-2 text-sm"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-slate-800">{item.nombre}</p>
-                    <p className="text-xs text-slate-500">{item.rut}</p>
-                    {item.expiresAt ? (
-                      <p className="mt-1 text-xs text-slate-500">
-                        Vence:{" "}
-                        {showExpirationDateOnly
-                          ? formatDateOnly(item.expiresAt)
-                          : formatDateTime(item.expiresAt)}
-                      </p>
+            {items.map((item) => {
+              const signatureStoredAt = getSignatureStoredDateTime(item);
+
+              return (
+                <li
+                  key={`${title}-${item.trabajadorId || item.rut}`}
+                  className="rounded-xl bg-slate-50 px-3 py-2 text-sm"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-slate-800">{item.nombre}</p>
+                      <p className="text-xs text-slate-500">{item.rut}</p>
+                      {signatureStoredAt ? (
+                        <p className="mt-1 text-xs text-slate-500">
+                          Fecha y hora firma: {formatStoredDateTime(signatureStoredAt)}
+                        </p>
+                      ) : null}
+                      {item.expiresAt ? (
+                        <p className="mt-1 text-xs text-slate-500">
+                          Vence:{" "}
+                          {showExpirationDateOnly
+                            ? formatDateOnly(item.expiresAt)
+                            : formatDateTime(item.expiresAt)}
+                        </p>
+                      ) : null}
+                    </div>
+
+                    {canRegenerate ? (
+                      <Button
+                        isIconOnly
+                        size="sm"
+                        variant="flat"
+                        color="primary"
+                        aria-label="Regenerar código"
+                        isLoading={regeneratingWorker === item.trabajadorId}
+                        onPress={() => handleRegenerateCode(item)}
+                      >
+                        <RefreshCw size={15} />
+                      </Button>
                     ) : null}
                   </div>
-
-                  {canRegenerate ? (
-                    <Button
-                      isIconOnly
-                      size="sm"
-                      variant="flat"
-                      color="primary"
-                      aria-label="Regenerar código"
-                      isLoading={regeneratingWorker === item.trabajadorId}
-                      onPress={() => handleRegenerateCode(item)}
-                    >
-                      <RefreshCw size={15} />
-                    </Button>
-                  ) : null}
-                </div>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         ) : (
           <p className="text-sm text-slate-500">Sin registros.</p>
