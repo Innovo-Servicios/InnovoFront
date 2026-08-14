@@ -43,6 +43,8 @@ interface Notification {
   fecha: string;
   requiereFirma?: boolean;
   firmaAutomatica?: boolean;
+  modoRegistro?: string | null;
+  tipoFirmaAdministrativa?: string | null;
 }
 
 interface NotificationWithKey extends Notification {
@@ -66,6 +68,19 @@ const TYPE_OPTIONS = [
   { value: "alert", label: "Alertas" },
   { value: "document", label: "Documentos" },
 ];
+
+const getSignatureChipLabel = (notification: Notification) => {
+  if (!notification.requiereFirma) return "Sin firma";
+
+  if (
+    notification.tipoFirmaAdministrativa === "presencial" ||
+    notification.modoRegistro === "presencial_regularizado"
+  ) {
+    return "Firma presencial";
+  }
+
+  return notification.firmaAutomatica ? "Firma automática" : "Firma";
+};
 
 const toCalendarDate = (date: Date) => {
   return parseDate(date.toISOString().split("T")[0]);
@@ -508,7 +523,7 @@ export default function NotificationTable({
                 <TableCell>
                   {item.requiereFirma ? (
                     <Chip color="success" variant="flat">
-                      {item.firmaAutomatica ? "Firma automática" : "Firma"}
+                      {getSignatureChipLabel(item)}
                     </Chip>
                   ) : (
                     <Chip color="default" variant="flat">

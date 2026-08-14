@@ -34,6 +34,8 @@ interface Notification {
   fecha: string;
   requiereFirma?: boolean;
   firmaAutomatica?: boolean;
+  modoRegistro?: string | null;
+  tipoFirmaAdministrativa?: string | null;
 }
 
 interface NotificationModalProps {
@@ -60,6 +62,8 @@ interface ValidationItem extends Follow {
 interface ValidationDetails {
   required: boolean;
   firmaAutomatica: boolean;
+  modoRegistro?: string | null;
+  tipoFirmaAdministrativa?: string | null;
   resumen: {
     pendientes: number;
     firmados: number;
@@ -77,6 +81,8 @@ interface ValidationDetails {
 const emptyValidation: ValidationDetails = {
   required: false,
   firmaAutomatica: false,
+  modoRegistro: null,
+  tipoFirmaAdministrativa: null,
   resumen: {
     pendientes: 0,
     firmados: 0,
@@ -144,6 +150,69 @@ const notificationDate = (notification: Notification) =>
 const notificationTime = (notification: Notification) =>
   notification.fecha.split("T")[1]?.split(".")[0] || "-";
 
+const isPresentialSignature = (
+  validation: Pick<ValidationDetails, "modoRegistro" | "tipoFirmaAdministrativa">,
+  notification?: Notification | null
+) =>
+  validation.tipoFirmaAdministrativa === "presencial" ||
+  validation.modoRegistro === "presencial_regularizado" ||
+  notification?.tipoFirmaAdministrativa === "presencial" ||
+  notification?.modoRegistro === "presencial_regularizado";
+
+const getSignatureLabel = (
+  validation: ValidationDetails,
+  notification?: Notification | null
+) => {
+  if (!validation.required) return "Sin firma";
+  if (isPresentialSignature(validation, notification)) return "Firma presencial";
+  return validation.firmaAutomatica ? "Firma automática" : "Firma requerida";
+};
+
+const getSignatureSectionTitle = (
+  validation: ValidationDetails,
+  notification?: Notification | null
+) => {
+  if (isPresentialSignature(validation, notification)) return "Firmas presenciales";
+  return validation.firmaAutomatica ? "Firmas automáticas" : "Validación por código";
+};
+
+const getSignatureDescription = (
+  validation: ValidationDetails,
+  notification?: Notification | null
+) => {
+  if (isPresentialSignature(validation, notification)) {
+    return "Registradas administrativamente como entrega presencial firmada por trabajadores.";
+  }
+
+  return validation.firmaAutomatica
+    ? "Registradas por todos los trabajadores al crear la notificación."
+    : "Seguimiento de firma y aceptación por destinatario.";
+};
+
+const getProgressLabel = (validation: ValidationDetails) =>
+  validation.required ? "Porcentaje de cumplimiento" : "Porcentaje de visualización";
+
+const calculateProgressPercent = (
+  validation: ValidationDetails,
+  vistos: Follow[],
+  noVistos: Follow[]
+) => {
+  if (validation.required) {
+    const total =
+      validation.resumen.pendientes +
+      validation.resumen.firmados +
+      validation.resumen.aceptados +
+      validation.resumen.vencidos +
+      validation.resumen.bloqueados;
+    const completed = validation.resumen.firmados + validation.resumen.aceptados;
+
+    return total > 0 ? Number(((completed / total) * 100).toFixed(1)) : 0;
+  }
+
+  const total = vistos.length + noVistos.length;
+  return total > 0 ? Number(((vistos.length / total) * 100).toFixed(1)) : 0;
+};
+
 const renderPdfSimpleList = (items: Follow[]) => {
   if (items.length === 0) return '<p class="empty">Sin registros.</p>';
 
@@ -199,9 +268,10 @@ const buildNotificationPdfHtml = ({
   validation: ValidationDetails;
   porcent: number;
 }) => {
-  const signatureLabel = validation.firmaAutomatica
-    ? "Firma automática"
-    : "Firma requerida";
+  const signatureLabel = getSignatureLabel(validation, notification);
+  const signatureSectionTitle = getSignatureSectionTitle(validation, notification);
+  const signatureDescription = getSignatureDescription(validation, notification);
+  const progressLabel = getProgressLabel(validation);
 
   return `<!doctype html>
   <html lang="es">
@@ -317,7 +387,7 @@ const buildNotificationPdfHtml = ({
           <p>${textToHtml(notification.contenido)}</p>
         </div>
         <div class="percentage">
-          <span>Porcentaje de visualización</span>
+          <span>${escapeHtml(progressLabel)}</span>
           <strong>${escapeHtml(porcent)}%</strong>
         </div>
       </section>
@@ -358,16 +428,8 @@ const buildNotificationPdfHtml = ({
       ${
         validation.required
           ? `<section class="section signature">
-              <h2>${
-                validation.firmaAutomatica
-                  ? "Firmas automáticas"
-                  : "Validación por código"
-              }</h2>
-              <p>${
-                validation.firmaAutomatica
-                  ? "Registradas por todos los trabajadores al crear la notificación."
-                  : "Seguimiento de firma y aceptación por destinatario."
-              }</p>
+              <h2>${escapeHtml(signatureSectionTitle)}</h2>
+              <p>${escapeHtml(signatureDescription)}</p>
               <div class="chips">
                 <span class="chip">Pendientes ${validation.resumen.pendientes}</span>
                 <span class="chip">Firmados ${validation.resumen.firmados}</span>
@@ -431,13 +493,11 @@ export default function NotificationModal({
       const res = await response.json();
       const vistos = Array.isArray(res.vista) ? res.vista : [];
       const noVistos = Array.isArray(res.no_vista) ? res.no_vista : [];
+      const nextValidation = res.validacion || emptyValidation;
       setCheck(vistos);
       setNoCheck(noVistos);
-      setValidation(res.validacion || emptyValidation);
-      const total = vistos.length + noVistos.length;
-      const nextPorcent =
-        total > 0 ? Number(((vistos.length / total) * 100).toFixed(1)) : 0;
-      setPorcecnt(nextPorcent);
+      setValidation(nextValidation);
+      setPorcecnt(calculateProgressPercent(nextValidation, vistos, noVistos));
     } catch (error) {
       console.error("Error fetching notification details:", error);
     }
@@ -656,7 +716,7 @@ export default function NotificationModal({
             </div>
             <div className="flex justify-center md:w-[30%]">
               <CircularProgress
-                aria-label="Porcentaje de visualización"
+                aria-label={getProgressLabel(validation)}
                 classNames={{
                   svg: "w-36 h-36 drop-shadow-md",
                   indicator: "stroke-blue-500",
@@ -688,11 +748,7 @@ export default function NotificationModal({
               <Card>
                 <CardBody className="flex flex-row items-center gap-2">
                   <ShieldCheck className="h-5 w-5 text-success" />
-                  <span>
-                    {validation.firmaAutomatica
-                      ? "Firma automática"
-                      : "Firma requerida"}
-                  </span>
+                  <span>{getSignatureLabel(validation, notification)}</span>
                 </CardBody>
               </Card>
             ) : null}
@@ -737,14 +793,10 @@ export default function NotificationModal({
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h3 className="text-lg font-bold text-emerald-900">
-                    {validation.firmaAutomatica
-                      ? "Firmas automáticas"
-                      : "Validación por código"}
+                    {getSignatureSectionTitle(validation, notification)}
                   </h3>
                   <p className="text-sm text-emerald-700">
-                    {validation.firmaAutomatica
-                      ? "Registradas por todos los trabajadores al crear la notificación."
-                      : "Seguimiento de firma y aceptación por destinatario."}
+                    {getSignatureDescription(validation, notification)}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
