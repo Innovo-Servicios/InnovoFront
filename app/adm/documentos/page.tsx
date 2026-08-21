@@ -31,9 +31,11 @@ import {
   FilePlus2,
   Files,
   FolderPlus,
+  Globe2,
   Heading2,
   History,
   List,
+  LockKeyhole,
   Pencil,
   RefreshCw,
   Search,
@@ -72,6 +74,7 @@ import {
   sendCompanyDocumentTemplate,
   updateCompanyDocument,
   updateCompanyDocumentCategory,
+  updateCompanyDocumentVisibility,
   updateCompanyDocumentTemplate,
   updatePhysicalSigner,
 } from "@/api/adm/companyDocuments";
@@ -146,6 +149,15 @@ const workflowColor = (status: CompanyDocument["estado"]) => {
   return "default" as const;
 };
 
+const visibilityColor = (isGlobal: boolean) => isGlobal ? "primary" as const : "default" as const;
+
+const canEditVisibility = (document: CompanyDocument) =>
+  ["vigente", "pendiente_aprobacion", "borrador"].includes(document.estado);
+
+const visibilityConfirmation = (nextIsGlobal: boolean) => nextIsGlobal
+  ? "El documento quedará visible para los trabajadores en la APP si está vigente. No se enviará notificación automática. ¿Confirmas cambiarlo a Global?"
+  : "El documento dejará de estar visible para los trabajadores en la APP. Las evidencias existentes se conservarán como respaldo histórico. ¿Confirmas cambiarlo a Interno?";
+
 const approvalColor = (status: CompanyDocumentApproval["estado"]) => {
   if (status === "aprobado") return "success" as const;
   if (status === "rechazado") return "danger" as const;
@@ -187,6 +199,40 @@ const downloadLocalCsv = (fileName: string, rows: string[][]) => {
   globalThis.URL.revokeObjectURL(url);
 };
 
+function DocumentVisibilityControl({
+  document,
+  canManage,
+  isLoading,
+  onChange,
+}: {
+  document: CompanyDocument;
+  canManage: boolean;
+  isLoading: boolean;
+  onChange: (nextIsGlobal: boolean) => Promise<void> | void;
+}) {
+  const label = document.esGlobal ? "Global" : "Interno";
+  if (!canManage || !canEditVisibility(document)) {
+    return (
+      <Chip size="sm" color={visibilityColor(document.esGlobal)} variant="flat">
+        {label}
+      </Chip>
+    );
+  }
+
+  return (
+    <Button
+      size="sm"
+      color={visibilityColor(document.esGlobal)}
+      variant="flat"
+      isLoading={isLoading}
+      startContent={!isLoading ? (document.esGlobal ? <Globe2 size={14} /> : <LockKeyhole size={14} />) : undefined}
+      onPress={() => void onChange(!document.esGlobal)}
+    >
+      {label}
+    </Button>
+  );
+}
+
 function DocumentPreview({ document }: { document: CompanyDocument }) {
   const { authenticatedFetch } = useAuth();
   const objectUrl = useAuthenticatedObjectUrl(document.archivo.url, authenticatedFetch);
@@ -222,7 +268,9 @@ export default function CompanyDocumentsPage() {
   const [candidates, setCandidates] = useState<SignatureCandidates>({ trabajadores: [], roles: [] });
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [visibilityFilter, setVisibilityFilter] = useState("all");
   const [search, setSearch] = useState("");
+  const [visibilitySavingId, setVisibilitySavingId] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [bulkPersonalOpen, setBulkPersonalOpen] = useState(false);
@@ -264,11 +312,15 @@ export default function CompanyDocumentsPage() {
     return () => { socket.off("documentosEmpresaActualizados", refresh); };
   }, [loadData, socket]);
 
-  const filteredDocuments = useMemo(() => documents.filter((document) =>
-    statusFilter === "all" ||
-    document.estadoVencimiento === statusFilter ||
-    document.estado === statusFilter
-  ), [documents, statusFilter]);
+  const filteredDocuments = useMemo(() => documents.filter((document) => {
+    const matchesStatus = statusFilter === "all" ||
+      document.estadoVencimiento === statusFilter ||
+      document.estado === statusFilter;
+    const matchesVisibility = visibilityFilter === "all" ||
+      (visibilityFilter === "global" && document.esGlobal) ||
+      (visibilityFilter === "interno" && !document.esGlobal);
+    return matchesStatus && matchesVisibility;
+  }), [documents, statusFilter, visibilityFilter]);
 
   const openDetail = async (id: string) => {
     try {
@@ -282,6 +334,31 @@ export default function CompanyDocumentsPage() {
     setDetail(await getCompanyDocument(authenticatedFetch, id));
     await loadData();
   };
+
+  const changeDocumentVisibility = useCallback(async (document: CompanyDocument, nextIsGlobal: boolean) => {
+    if (document.esGlobal === nextIsGlobal) return;
+    if (!globalThis.confirm(visibilityConfirmation(nextIsGlobal))) return;
+
+    setVisibilitySavingId(document.id);
+    try {
+      const updated = await updateCompanyDocumentVisibility(authenticatedFetch, document.id, nextIsGlobal);
+      setDocuments((current) => current.map((item) => item.id === updated.id ? updated : item));
+      if (detail?.id === updated.id) {
+        setDetail(await getCompanyDocument(authenticatedFetch, updated.id));
+      }
+      await loadData();
+      sileo.success({
+        title: `Documento ${updated.esGlobal ? "global" : "interno"}`,
+        description: updated.esGlobal
+          ? "Quedará visible para trabajadores cuando esté vigente."
+          : "Dejará de aparecer para trabajadores y mantendrá sus evidencias.",
+      });
+    } catch (error) {
+      sileo.error({ title: "No se pudo cambiar la visibilidad", description: error instanceof Error ? error.message : undefined });
+    } finally {
+      setVisibilitySavingId(null);
+    }
+  }, [authenticatedFetch, detail?.id, loadData]);
 
   return (
     <div className="h-full overflow-y-auto bg-slate-50 p-4 md:p-6">
@@ -381,6 +458,11 @@ export default function CompanyDocumentsPage() {
                 <SelectItem key="pendiente_aprobacion">Pendiente aprobación</SelectItem>
                 <SelectItem key="reemplazado">Reemplazados</SelectItem>
               </Select>
+              <Select className="w-48" label="Visibilidad" selectedKeys={[visibilityFilter]} onChange={(event) => setVisibilityFilter(event.target.value)}>
+                <SelectItem key="all">Todos</SelectItem>
+                <SelectItem key="global">Globales</SelectItem>
+                <SelectItem key="interno">Internos</SelectItem>
+              </Select>
             </div>
             {loading ? (
               <div className="grid min-h-72 place-items-center"><Spinner /></div>
@@ -420,9 +502,12 @@ export default function CompanyDocumentsPage() {
                           </Chip>
                         </td>
                         <td className="px-3 py-3">
-                          <Chip size="sm" color={document.esGlobal ? "primary" : "default"} variant="flat">
-                            {document.esGlobal ? "Global" : "Interno"}
-                          </Chip>
+                          <DocumentVisibilityControl
+                            document={document}
+                            canManage={canManage}
+                            isLoading={visibilitySavingId === document.id}
+                            onChange={(nextIsGlobal) => changeDocumentVisibility(document, nextIsGlobal)}
+                          />
                         </td>
                         <td className="px-3 py-3">
                           <Chip size="sm" color={statusColor(document.estadoVencimiento)} variant="flat">
@@ -487,6 +572,8 @@ export default function CompanyDocumentsPage() {
         canManage={canManage}
         canManageSignatures={canManageSignatures}
         candidates={candidates}
+        visibilitySavingId={visibilitySavingId}
+        onVisibilityChange={changeDocumentVisibility}
         onRefresh={refreshDetail}
       />
     </div>
@@ -1184,11 +1271,15 @@ function DocumentMetadataPanel({
   document,
   authenticatedFetch,
   canManage,
+  visibilitySaving,
+  onVisibilityChange,
   onRefresh,
 }: {
   document: CompanyDocument;
   authenticatedFetch: typeof fetch;
   canManage: boolean;
+  visibilitySaving: boolean;
+  onVisibilityChange: (nextIsGlobal: boolean) => Promise<void> | void;
   onRefresh: () => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
@@ -1281,7 +1372,15 @@ function DocumentMetadataPanel({
           <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
             <p><strong>Código:</strong> {document.codigoVersionado || document.codigoBase || `v${document.version}`}</p>
             <p><strong>Estado:</strong> {COMPANY_DOCUMENT_WORKFLOW_LABELS[document.estado]}</p>
-            <p><strong>Visibilidad:</strong> {document.esGlobal ? "Global" : "Interno"}</p>
+            <div className="flex items-center gap-2">
+              <strong>Visibilidad:</strong>
+              <DocumentVisibilityControl
+                document={document}
+                canManage={canManage}
+                isLoading={visibilitySaving}
+                onChange={onVisibilityChange}
+              />
+            </div>
             <p><strong>Publicado:</strong> {formatDateTime(document.publicadoAt)}</p>
             <p><strong>Emisión:</strong> {formatDate(document.fechaEmision)}</p>
             <p><strong>Vencimiento:</strong> {formatDate(document.fechaVencimiento)}</p>
@@ -1837,6 +1936,8 @@ function DocumentDetailModal({
   canManage,
   canManageSignatures,
   candidates,
+  visibilitySavingId,
+  onVisibilityChange,
   onRefresh,
 }: {
   document: CompanyDocument | null;
@@ -1845,6 +1946,8 @@ function DocumentDetailModal({
   canManage: boolean;
   canManageSignatures: boolean;
   candidates: SignatureCandidates;
+  visibilitySavingId: string | null;
+  onVisibilityChange: (document: CompanyDocument, nextIsGlobal: boolean) => Promise<void> | void;
   onRefresh: (id: string) => Promise<void>;
 }) {
   if (!document) return null;
@@ -1888,7 +1991,14 @@ function DocumentDetailModal({
                 )}
               </div>
               {canManage && document.estado === "vigente" && <RenewDocumentPanel document={document} authenticatedFetch={authenticatedFetch} onRenewed={onRefresh} />}
-              <DocumentMetadataPanel document={document} authenticatedFetch={authenticatedFetch} canManage={canManage} onRefresh={refresh} />
+              <DocumentMetadataPanel
+                document={document}
+                authenticatedFetch={authenticatedFetch}
+                canManage={canManage}
+                visibilitySaving={visibilitySavingId === document.id}
+                onVisibilityChange={(nextIsGlobal) => onVisibilityChange(document, nextIsGlobal)}
+                onRefresh={refresh}
+              />
               <ChangeControlPanel document={document} />
               {document.historial && document.historial.length > 1 && (
                 <section className="rounded-xl border border-slate-200 p-4">

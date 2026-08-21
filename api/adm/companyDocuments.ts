@@ -144,6 +144,9 @@ export const createCompanyDocument = (fetcher: Fetcher, body: FormData) =>
 export const updateCompanyDocument = (fetcher: Fetcher, id: string, body: Record<string, unknown>) =>
   request<CompanyDocument>(fetcher, `/documentoEmpresa/${id}`, { method: "PUT", body: JSON.stringify(body) });
 
+export const updateCompanyDocumentVisibility = (fetcher: Fetcher, id: string, esGlobal: boolean) =>
+  request<CompanyDocument>(fetcher, `/documentoEmpresa/${id}/visibilidad`, { method: "PATCH", body: JSON.stringify({ esGlobal }) });
+
 export const archiveCompanyDocument = (fetcher: Fetcher, id: string) =>
   request<void>(fetcher, `/documentoEmpresa/${id}`, { method: "DELETE" });
 
